@@ -1,0 +1,71 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- Raised for Windows.Media.Control, used by DotStream.Media. -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <!-- For NotifyIcon. WPF has no tray support of its own, and hand-rolling
+         Shell_NotifyIcon buys nothing here. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>dotStream</AssemblyName>
+    <RootNamespace>DotStream.App</RootNamespace>
+    <ApplicationIcon>Resources\dotstream.ico</ApplicationIcon>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+
+    <Product>dotStream</Product>
+    <Authors>Thomas Blix</Authors>
+    <Company>Thomas Blix</Company>
+    <Copyright>Copyright © Thomas Blix</Copyright>
+    <Description>Controller software for the AJAZZ AKP153E stream controller.</Description>
+    <!-- The default for local builds only. Releases are built from the tag: the
+         workflow passes -p:Version and /DAppVersion, so this value never reaches an
+         artefact and cannot drift into one. -->
+    <Version>0.9.0</Version>
+    <FileVersion>0.9.0.0</FileVersion>
+    <AssemblyVersion>0.9.0.0</AssemblyVersion>
+  </PropertyGroup>
+
+  <!-- UseWindowsForms adds System.Drawing and System.Windows.Forms as implicit
+       usings, which collide with WPF on Color, Point, ListBox, MouseEventArgs and
+       Application. Only TrayIcon.cs needs them, and it imports them explicitly. -->
+  <!-- Also embedded, so windows and the tray can load the same asset at runtime.
+       Regenerate with tools/make-icon.ps1. -->
+  <ItemGroup>
+    <Resource Include="Resources\dotstream.ico" />
+
+    <!-- Atkinson Hyperlegible, SIL Open Font Licence (Resources\fonts\OFL.txt).
+         Drawn by the Braille Institute for maximum letterform distinction, which is
+         exactly the property an 85px LCD seen at an angle needs. -->
+    <Resource Include="Resources\fonts\*.ttf" />
+
+    <!-- Embedded so About can show them wherever the exe ends up. Apache-2.0 4(d)
+         wants the notices readable in the distributed work, not in a loose file
+         beside it that a self-contained publish might not carry.
+
+         EmbeddedResource with an explicit LogicalName rather than a WPF Resource:
+         these files live outside the project directory, and Link does not control
+         the pack:// path for them - the content ends up embedded under a name you
+         cannot predict, so the URI silently resolves to nothing. -->
+    <EmbeddedResource Include="..\..\LICENSE" LogicalName="dotStream.LICENSE.txt" />
+    <EmbeddedResource Include="..\..\CREDITS.md" LogicalName="dotStream.CREDITS.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Remove="System.Drawing" />
+    <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DotStream.Core\DotStream.Core.csproj" />
+    <ProjectReference Include="..\DotStream.Rendering\DotStream.Rendering.csproj" />
+    <ProjectReference Include="..\DotStream.Icons\DotStream.Icons.csproj" />
+    <ProjectReference Include="..\DotStream.Simulator\DotStream.Simulator.csproj" />
+    <ProjectReference Include="..\DotStream.Media\DotStream.Media.csproj" />
+  </ItemGroup>
+
+</Project>

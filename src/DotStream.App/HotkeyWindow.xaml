@@ -1,0 +1,74 @@
+<Window x:Class="DotStream.App.HotkeyWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Hotkey"
+        Icon="Resources/dotstream.ico"
+        SizeToContent="Height" Width="470"
+        Background="{StaticResource Surface}"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+    <StackPanel Margin="22,20,22,18">
+
+        <TextBlock Text="Send a key combination" FontSize="14" FontWeight="SemiBold" />
+        <TextBlock Margin="0,3,0,14" FontSize="11.5" TextWrapping="Wrap"
+                   Foreground="{StaticResource TextMuted}"
+                   Text="Press the combination you want this key to send. It goes to whichever window has focus, so it works with any program that has shortcuts." />
+
+        <Border x:Name="CaptureBox" Background="#FF0E0E11" BorderBrush="{StaticResource Accent}"
+                BorderThickness="1" CornerRadius="6" Height="62" Focusable="True"
+                KeyDown="OnCaptureKeyDown" KeyUp="OnCaptureKeyUp">
+            <TextBlock x:Name="CaptureLabel" Text="Press a combination..."
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       FontSize="18" FontWeight="SemiBold" />
+        </Border>
+
+        <DockPanel Margin="0,8,0,0">
+            <Button x:Name="ModeButton" DockPanel.Dock="Left" Content="Single combination"
+                    FontSize="10.5" Padding="8,3" Click="OnToggleMode"
+                    ToolTip="Ribbon commands need several taps in a row - Merge and Centre in Excel is Alt, H, M, C." />
+            <Button x:Name="StepBackButton" DockPanel.Dock="Right" Content="Remove last step"
+                    FontSize="10.5" Padding="8,3" Click="OnRemoveStep"
+                    Visibility="Collapsed" Margin="8,0,0,0" />
+            <TextBlock x:Name="HintLabel" VerticalAlignment="Center" Margin="10,0,0,0"
+                       FontSize="11" TextTrimming="CharacterEllipsis"
+                       Foreground="{StaticResource TextMuted}"
+                       Text="Modifiers on their own are ignored - hold them and press a key." />
+        </DockPanel>
+
+        <TextBlock Text="KEY LABEL" FontSize="10" FontWeight="SemiBold" Margin="0,16,0,4"
+                   Foreground="{StaticResource TextMuted}" />
+        <TextBox x:Name="LabelBox"
+                 Background="#FF0E0E11" Foreground="{StaticResource TextPrimary}"
+                 CaretBrush="{StaticResource Accent}" BorderBrush="#FF33333A"
+                 Padding="7,5" FontSize="12" TextChanged="OnLabelChanged" />
+
+        <DockPanel Margin="0,16,0,4">
+            <TextBlock DockPanel.Dock="Left" Text="ICON" FontSize="10" FontWeight="SemiBold"
+                       VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" />
+            <Button DockPanel.Dock="Right" Content="From a file..." FontSize="10.5" Padding="8,3"
+                    Click="OnBrowseIcons" Margin="8,0,0,0"
+                    ToolTip="Any .dll, .exe or .ico on this machine - SHELL32.dll and imageres.dll hold hundreds." />
+            <TextBlock x:Name="IconHint" HorizontalAlignment="Right" VerticalAlignment="Center"
+                       FontSize="10" Foreground="{StaticResource TextMuted}"
+                       TextTrimming="CharacterEllipsis" />
+        </DockPanel>
+        <Border Background="{StaticResource SurfaceRaised}" CornerRadius="8" Padding="6" Height="132">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <WrapPanel x:Name="IconPanel" />
+            </ScrollViewer>
+        </Border>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button x:Name="LaterButton" Content="Later" MinWidth="88" Margin="0,0,10,0"
+                    Click="OnLater" Visibility="Collapsed"
+                    ToolTip="Keep this suggestion and be shown it again another time." />
+            <Button Content="Cancel" MinWidth="88" Click="OnCancel" />
+            <Button x:Name="SaveButton" Content="Save" MinWidth="88" Margin="10,0,0,0"
+                    Click="OnSave" IsEnabled="False"
+                    Background="#FF12343A" BorderBrush="{StaticResource Accent}" />
+        </StackPanel>
+
+    </StackPanel>
+</Window>

@@ -1,0 +1,152 @@
+name: Release
+
+# Builds on a version tag and publishes a GitHub Release with three artefacts:
+#
+#   dotStream-<version>-win-x64-setup.exe      installer (Inno Setup)
+#   dotStream-<version>-win-x64-portable.zip   single self-contained exe
+#   SHA256SUMS.txt                             checksums for both
+#
+# Everything is self-contained, so nothing has to be installed first. That costs
+# roughly 70 MB compressed, which is a better trade than losing people at a
+# "download the .NET runtime as well" step.
+#
+# Only official actions plus the preinstalled GitHub CLI are used - no third-party
+# actions in the release path.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, for example 0.2.0'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  PROJECT: src/DotStream.App/DotStream.App.csproj
+  RUNTIME: win-x64
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $input = '${{ github.event.inputs.version }}'
+          $version = if ($input) { $input } else { $tag -replace '^v', '' }
+
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Version '$version' is not three-part semver. Tag releases as v0.2.0."
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$(if ($input) { "v$input" } else { $tag })" >> $env:GITHUB_OUTPUT
+          Write-Host "Building $version"
+
+      - name: Build
+        shell: pwsh
+        run: dotnet build $env:PROJECT -c Release -p:Version=${{ steps.version.outputs.version }} --nologo
+
+      # Folder publish feeds the installer; a folder starts marginally faster than a
+      # single file because nothing has to be extracted on first run.
+      - name: Publish (folder, for the installer)
+        shell: pwsh
+        run: >
+          dotnet publish $env:PROJECT -c Release -r $env:RUNTIME --self-contained true
+          -p:Version=${{ steps.version.outputs.version }}
+          -p:PublishSingleFile=false
+          -p:DebugType=none
+          -o publish/folder --nologo
+
+      - name: Publish (single file, for the portable zip)
+        shell: pwsh
+        run: >
+          dotnet publish $env:PROJECT -c Release -r $env:RUNTIME --self-contained true
+          -p:Version=${{ steps.version.outputs.version }}
+          -p:PublishSingleFile=true
+          -p:EnableCompressionInSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=none
+          -o publish/single --nologo
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc `
+            /DAppVersion=${{ steps.version.outputs.version }} `
+            /DSourceDir=..\publish\folder `
+            /DOutputDir=..\artifacts `
+            installer\dotstream.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with $LASTEXITCODE" }
+
+      - name: Package portable zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          Compress-Archive -Path publish\single\* `
+            -DestinationPath "artifacts\dotStream-${{ steps.version.outputs.version }}-win-x64-portable.zip"
+
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Push-Location artifacts
+          Get-ChildItem -File -Include *.exe, *.zip -Recurse |
+            Sort-Object Name |
+            ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } |
+            Set-Content SHA256SUMS.txt -Encoding ascii
+          Get-Content SHA256SUMS.txt
+          Pop-Location
+
+      - name: Release notes
+        shell: pwsh
+        run: |
+          @"
+          ## dotStream ${{ steps.version.outputs.version }}
+
+          | Download | For |
+          |---|---|
+          | ``dotStream-${{ steps.version.outputs.version }}-win-x64-setup.exe`` | Normal install, with Start menu entry and uninstaller |
+          | ``dotStream-${{ steps.version.outputs.version }}-win-x64-portable.zip`` | A single exe, nothing written outside ``%APPDATA%\dotStream`` |
+
+          Self-contained: no .NET runtime needed. Windows 10 2004 (build 19041) or newer, x64.
+
+          ### Windows will warn you
+
+          These builds are not code signed, so SmartScreen shows *"Windows protected your PC"*.
+          Choose **More info** then **Run anyway**, or verify the download against
+          ``SHA256SUMS.txt`` first:
+
+          ``````powershell
+          Get-FileHash .\dotStream-${{ steps.version.outputs.version }}-win-x64-setup.exe -Algorithm SHA256
+          ``````
+
+          Signing is on the roadmap - see TODO.md.
+          "@ | Set-Content notes.md -Encoding utf8
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create ${{ steps.version.outputs.tag }} `
+            --title "dotStream ${{ steps.version.outputs.version }}" `
+            --notes-file notes.md `
+            (Get-ChildItem artifacts -File | ForEach-Object { $_.FullName })

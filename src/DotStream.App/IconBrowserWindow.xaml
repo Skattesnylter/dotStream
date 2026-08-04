@@ -1,0 +1,48 @@
+<Window x:Class="DotStream.App.IconBrowserWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Icons"
+        Icon="Resources/dotstream.ico"
+        Height="620" Width="760"
+        Background="{StaticResource Surface}"
+        WindowStartupLocation="CenterOwner">
+
+    <DockPanel Margin="18">
+
+        <TextBlock DockPanel.Dock="Top" x:Name="HeadingLabel" Text="Icons"
+                   FontSize="15" FontWeight="SemiBold" />
+        <TextBlock DockPanel.Dock="Top" x:Name="SubtitleLabel" Margin="0,3,0,12"
+                   FontSize="11.5" TextWrapping="Wrap" Foreground="{StaticResource TextMuted}" />
+
+        <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
+            <TextBox x:Name="SearchBox"
+                     Background="#FF0E0E11" Foreground="{StaticResource TextPrimary}"
+                     CaretBrush="{StaticResource Accent}" BorderBrush="#FF33333A"
+                     Padding="7,5,26,5" FontSize="12" TextChanged="OnSearchChanged" />
+            <Button x:Name="ClearSearchButton" Content="&#x2715;" Width="20" Height="20"
+                    FontSize="10" Padding="0" Background="Transparent" BorderThickness="0"
+                    Foreground="{StaticResource Accent}" HorizontalAlignment="Right"
+                    VerticalAlignment="Center" Margin="0,0,4,0" Visibility="Collapsed"
+                    Click="OnClearSearch" />
+        </Grid>
+
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+            <TextBlock DockPanel.Dock="Left" x:Name="CountLabel" VerticalAlignment="Center"
+                       FontSize="11" Foreground="{StaticResource TextMuted}" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="From a file..." MinWidth="110" Click="OnBrowseFile" Margin="0,0,10,0"
+                        ToolTip="Any .dll, .exe or .ico on this machine. Read at runtime, never copied." />
+                <Button x:Name="CancelButton" Content="Close" MinWidth="88" Click="OnCancel" />
+                <Button x:Name="ChooseButton" Content="Use this one" MinWidth="110" Margin="10,0,0,0"
+                        Click="OnChoose" IsEnabled="False" Visibility="Collapsed"
+                        Background="#FF12343A" BorderBrush="{StaticResource Accent}" />
+            </StackPanel>
+        </DockPanel>
+
+        <Border Background="{StaticResource SurfaceRaised}" CornerRadius="8" Padding="8">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <WrapPanel x:Name="IconPanel" />
+            </ScrollViewer>
+        </Border>
+    </DockPanel>
+</Window>

@@ -1,0 +1,73 @@
+<Window x:Class="DotStream.App.AppSelectionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Select applications"
+        Icon="Resources/dotstream.ico"
+        Height="640" Width="520"
+        Background="{StaticResource Surface}"
+        WindowStartupLocation="CenterOwner">
+
+    <DockPanel Margin="18">
+
+        <TextBlock DockPanel.Dock="Top" Text="Choose what appears in the palette"
+                   FontSize="15" FontWeight="SemiBold" />
+        <TextBlock DockPanel.Dock="Top" x:Name="SubtitleLabel" Margin="0,3,0,12"
+                   FontSize="11.5" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" />
+
+        <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+            <TextBox x:Name="SearchBox"
+                     Background="#FF0E0E11" Foreground="{StaticResource TextPrimary}"
+                     CaretBrush="{StaticResource Accent}" BorderBrush="#FF33333A"
+                     Padding="6,5,26,5" FontSize="12"
+                     TextChanged="OnSearchChanged" />
+            <Button x:Name="ClearSearchButton" Content="&#x2715;"
+                    Width="20" Height="20" FontSize="10" Padding="0"
+                    Background="Transparent" BorderThickness="0"
+                    Foreground="{StaticResource Accent}"
+                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                    Margin="0,0,4,0" Visibility="Collapsed"
+                    Click="OnClearSearch" ToolTip="Clear the search" />
+        </Grid>
+
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
+            <Button Content="Apps and games" Click="OnSelectHeuristic" FontSize="11" Padding="10,4" />
+            <Button Content="All" Click="OnSelectAll" FontSize="11" Padding="10,4" Margin="8,0,0,0" />
+            <Button Content="None" Click="OnSelectNone" FontSize="11" Padding="10,4" Margin="8,0,0,0" />
+            <TextBlock x:Name="CountLabel" VerticalAlignment="Center" Margin="14,0,0,0"
+                       FontSize="11" Foreground="{StaticResource TextMuted}" />
+        </StackPanel>
+
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Content="Cancel" MinWidth="88" Click="OnCancel" />
+            <Button Content="Save" MinWidth="88" Margin="10,0,0,0" Click="OnSave"
+                    Background="#FF12343A" BorderBrush="{StaticResource Accent}" />
+        </StackPanel>
+
+        <Border Background="{StaticResource SurfaceRaised}" CornerRadius="8" Padding="6">
+            <ListBox x:Name="ItemList" Background="Transparent" BorderThickness="0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="2" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                  VerticalContentAlignment="Center" Padding="8,0,0,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Image Source="{Binding App.Icon}" Width="24" Height="24" Margin="0,0,10,0" />
+                                <TextBlock Text="{Binding App.Name}" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextPrimary}"
+                                           FontSize="12" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                        </CheckBox>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+
+    </DockPanel>
+</Window>
