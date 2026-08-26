@@ -51,13 +51,18 @@ Full list in [TODO.md](TODO.md).
 
 ## Installing
 
-Releases carry two downloads, both self-contained — no .NET runtime to install
-first. Requires Windows 10 2004 (build 19041) or newer, x64.
+### [⬇ Download the latest release](https://github.com/Skattesnylter/dotStream/releases/latest)
+
+Both downloads are self-contained — no .NET runtime to install first. Requires
+Windows 10 2004 (build 19041) or newer, x64.
 
 | Download | For |
 |---|---|
 | `dotStream-<version>-win-x64-setup.exe` | Normal install, Start menu entry, uninstaller. Per-user, so no UAC prompt. |
 | `dotStream-<version>-win-x64-portable.zip` | A single exe. Writes nothing outside `%APPDATA%\dotStream`. |
+
+Take the installer if you are not sure. The portable zip is for a USB stick, a
+locked-down machine, or trying it without installing anything.
 
 Settings live in `%APPDATA%\dotStream\` and are deliberately left alone by the
 uninstaller:
@@ -90,7 +95,7 @@ application and a public release to qualify for.
 Every release includes `SHA256SUMS.txt`. Check your download against it:
 
 ```powershell
-Get-FileHash .\dotStream-0.1.0-win-x64-setup.exe -Algorithm SHA256
+Get-FileHash .\dotStream-1.0.0-win-x64-setup.exe -Algorithm SHA256
 ```
 
 Compare the result with the matching line in `SHA256SUMS.txt`. Builds are produced
