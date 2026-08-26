@@ -1,29 +1,37 @@
 # dotStream — TODO
 
-Ordered roughly by what unblocks the most. Anything marked **hardware** waits for
-the AKP153E to arrive.
+Ordered roughly by what unblocks the most. The **hardware** markers are historical:
+the AKP153E arrived on 04.08.2026 and everything they gated is measured.
 
 ---
 
 ## Releases
 
-Currently **0.9.0**. It was 0.1.0 long after that stopped being true, which mattered
-because the version number is what people read before downloading — and media
-integration, MCP in both directions, sequence macros, eight widgets, persistence,
-focus-following, an installer and a build pipeline is not a prototype.
+Currently **1.0.0**.
 
-**1.0.0 needs:**
+**1.0.0 shipped with:**
 
-- [ ] The HID transport proven against real hardware. Not negotiable: a deck
+- [x] The HID transport proven against real hardware. Was never negotiable: a deck
       application that cannot drive the deck is not 1.0.
-- [ ] Text macro, run program or script, open URL — the actions every competitor ships
-- [ ] The repository published
+- [x] Text macro, run program or script, open URL — the actions every competitor ships
+- [x] The repository published
+
+Three things were added on the strength of the hardware being real, none of which
+were on this list — and all three came from using it rather than building it:
+
+- Hot-plug. `TryOpen` was called exactly once, so a deck plugged in after startup was
+  never looked for again.
+- `STP` after `CLE`. Clears were never committed; every clear in the application
+  happened to be followed by a repaint whose first image committed it by accident.
+  Clearing on shutdown was the first one with nothing after it.
+- Cell calibration in the application. 100×100 is this variant's measurement, and
+  several VID/PID pairs ship under the name.
 
 **1.1.0:** folders and the page-switch key, and probably per-key colour and image.
 
 Version comes from the git tag. The workflow passes `-p:Version` and `/DAppVersion`, so
 the number in the csproj is a local-build default that never reaches an artefact — tag
-as `v0.9.1` and everything follows.
+as `v1.0.1` and everything follows.
 
 ---
 
@@ -33,25 +41,141 @@ The one thing every comparable project has and we do not. Protocol is fully
 documented in [docs/PROTOCOL.md](docs/PROTOCOL.md); this is implementation, not
 research. Estimated 1–2 days, but it is also where the surprises live.
 
-- [ ] **Enumeration tool** — list every HID collection with VID/PID/usage page and
-      report lengths. Four candidate VID/PID pairs are in circulation; a Temu unit
-      may well report a fifth. Do not hardcode.
-- [ ] Open the **`0xFFA0`** vendor collection, not the first one enumerated.
-- [ ] Writes prefixed with a `0x00` report-ID byte — **513 bytes**, not 512.
-- [ ] `DIS` → `LIG 50` → `CLE` to prove the transport end to end.
-- [ ] **Orientation brute-force**: render an asymmetric glyph, try all 8
-      transforms, keep the one that comes out upright. Do not trust the
-      "90° + mirror" note in the docs.
+### Measured on the real unit, 04.08.2026
+
+The device arrived and was enumerated. Everything below is read from the hardware,
+not from the protocol notes.
+
+```
+VID_0300  PID_3010  rev 0002        serial 0300D0781510
+manufacturer  HOTSPOTEKUSB
+product       HOTSPOTEKUSB HID DEMO
+
+MI_00  vendor      usage page 0xFFA0  usage 0x01
+       input  report   513 bytes
+       output report  1025 bytes
+       feature report    0 bytes
+       link collections  2
+
+MI_01  keyboard    usage page 0x0001  usage 0x06
+       input 9 bytes, output 2 bytes
+```
+
+- [x] **Enumeration tool** — written and run. `0xFFA0` confirmed as the vendor
+      collection, and it is the first of the two interfaces.
+- [x] **The write size is 1025, not 513.** This is the correction that matters: the
+      assumption was 512 payload plus one report-ID byte. The device asks for 1024
+      plus one. Windows rejects a write that is not exactly `OutputReportByteLength`,
+      so every write is `[0x00][up to 1024 bytes]`. Reads are 513, which does match
+      512 plus the report ID — the asymmetry is real.
+- [x] **A serial number exists**, and Windows uses it in the instance ID rather than
+      a port path. Identity therefore survives moving the deck to another port, which
+      is better than section 9 assumed. Whether it is unique across units is unknown
+      until there is a second deck; "old" units reportedly share one.
+- [ ] The product string reads **"HOTSPOTEKUSB HID DEMO"** — unmodified vendor demo
+      firmware on a generic Hotspot-EK USB HID controller. That string is searchable
+      and is the thread to pull on for the firmware question in section 9.
+- [ ] Find out what the keyboard interface (MI_01) sends. Likely the three keys that
+      emulate an Elgato device. Harmless, but it means the deck can type.
+- [x] **The transport works.** `LIG 5` dimmed the deck and `LIG 80` brought it back,
+      on the real unit. Open the `0xFFA0` collection with read and write access — no
+      exclusive-access fight — and write exactly 1025 bytes.
+- [x] Packet layout in [docs/PROTOCOL.md](docs/PROTOCOL.md) is correct as written.
+      With the report-ID byte in front, everything shifts by one: `"CRT"` at frame
+      1–3, opcode at **6–8**, payload from **11**. Two attempts were wasted guessing
+      those offsets from memory before reading the file that was already in the
+      repository. Read the document first.
+- [x] **Upload cost measured, and the estimate was ten times too pessimistic.**
+
+      ```
+      one cell                 1.0 ms
+      full 18-cell repaint    18.0 ms      (55 fps ceiling)
+      JPEG encode              0.26 ms per cell
+      serialised vs not       no difference
+      ```
+
+      Thirty frames per second across all eighteen cells held for six seconds with
+      nothing dropped, and looked smooth on the hardware. The README said "no
+      animation, full repaint is ~0.2 s"; that constraint never existed.
+
+      Serialising costs nothing measurable — the write lock never contends, because
+      each write returns in a millisecond. Leave the queue in `DeckController` alone.
+- [ ] Neither `DIS` nor `LIG` produced a reply frame. Either the device does not
+      acknowledge these, or reads need a different approach than a blocking
+      `ReadFile`. Less urgent now: uploads clearly do not need an ACK to be safe.
+- [x] **`CLE` works, but only with an `STP` after it.** The clear sits in the device
+      uncommitted otherwise. This hid for a long time: every clear in the application
+      was followed by a repaint, and the first image's own `STP` committed the clear
+      along with it. Clearing on shutdown was the first clear with nothing after it,
+      and it did nothing at all.
+- [x] **Image upload works.** An 85×85 JPEG at q90 rendered with `JpegBitmapEncoder`
+      appeared on the deck. `BAT` with the size big-endian and a 1-based cell index,
+      then the data, then `STP`.
+- [x] **Chunks are one report's worth.** The document says 512 bytes, but that is the
+      513-byte variant. Ours takes 1024 payload bytes per report and accepted a
+      1348-byte JPEG as two chunks without complaint.
+- [x] **Orientation is a plain 270° rotation, no mirroring.** Sent upright, the glyph
+      appeared rotated 90° clockwise; pre-rotating 270° put it right, and it also
+      centred correctly. The document's reduction of "90° plus H and V mirroring" to
+      a single 270° turn was correct — now measured rather than trusted.
+- [x] Cell `01` is the **top right** key, confirming the grid in `DeckLayout.cs` at
+      least at that corner.
 - [ ] **Persistence test**: upload, unplug, replug. Framebuffer or flash? Decides
       whether a 1 Hz info widget is safe.
-- [ ] Verify cell resolution — 85×85 documented, info cells 16–18 may differ.
-- [ ] Verify the info cells really are `0x10`–`0x12` in column 5. If not, only
-      `DeckLayout.cs` needs changing.
+- [x] **The whole 6×3 layout is confirmed.** A numbered image went to each of the
+      eighteen cells and was read back off the deck:
+
+      ```
+      13  10  07  04  01 | 16
+      14  11  08  05  02 | 17
+      15  12  09  06  03 | 18
+      ```
+
+      Every position matched, including 16–18 in column 5. That was the one thing
+      `PROTOCOL.md` marked VERIFY and the one place `DeckLayout.cs` said would need
+      fixing if wrong. It needed no fixing.
+- [x] 85×85 is accepted and renders correctly on both a key and an info cell, so the
+      two are the same size.
+- [x] **Cells are 100×100, measured.** Not 85, and not the 126 in AJAZZ's own manual.
+      `DeckLayout.CellPixels` is the single place it is stated and everything else
+      derives from it.
+- [x] **Cells are persistent framebuffers.** An upload only writes where the image
+      reaches; the rest keeps its previous contents. That is what the pale border and
+      the vendor-logo fragments were. At the correct size a full-cell image covers it,
+      so no clearing is needed in normal use — but anything that writes smaller must
+      `CLE` first.
+- [x] **Folded into dotStream as View → Calibrate cells**, and the standalone tool
+      deleted. Better inside than out: the tool had to open the device itself, so
+      dotStream had to be closed first, which meant calibrating against a test image
+      instead of your own keys. Size and rotation now live in `settings.json`, so
+      whoever plugs in a variant nobody measured can fix it without a rebuild.
 - [ ] JPEG encode at ~q90 via `JpegBitmapEncoder`, chunked after `BAT`, wait for
       the `ACK..OK` frame before the next upload.
-- [ ] Input report parsing: byte 9, synthesise press/release edges by diffing
-      successive frames, discard frames shorter than 16 bytes.
-- [ ] Hot-plug: detect connect/disconnect, fall back to the simulator.
+- [x] **Input reports decoded.** All fifteen keys pressed and captured. Frames are
+      513 bytes with the header `ACK\0\0OK`, the cell index at byte 10 and the state
+      at byte 11 — `0x01` press, `0x00` release.
+
+      Two things turned out easier than the notes said. Press and release are
+      **explicit**, so no edge synthesis by diffing is needed. And the firmware
+      debounces cleanly: thirteen presses gave thirteen pairs, no doubles.
+
+      The `ACK..OK` header is the input frame's own, not a separate upload
+      acknowledgement — which is why listening for one after an upload found
+      nothing.
+- [x] **Hot-plug.** Pulling the cable never took the application down — that much was
+      already true — but nothing noticed the deck coming back, so it sat dark showing
+      its own boot logo until the app was restarted.
+
+      Now the transport raises `Disconnected` once, on a failed read or a failed write,
+      and the mirror lets the dead device go and looks for it every two seconds. A
+      returning deck is a *new* device as far as Windows is concerned, so reconnecting
+      enumerates from scratch rather than reopening anything.
+
+      Two details worth keeping: writes that fail while the cable is out are swallowed,
+      or one yanked cable mid-repaint would surface as eighteen errors when the only
+      thing worth saying is said once. And reconnecting clears all eighteen cells before
+      repainting — `RepaintKeys` covers 1–15, while the info cells wait for their widget
+      interval, so without the clear the vendor logo sat in column five for a second.
 
 ## 2. Automatic profile switching — done
 
@@ -90,6 +214,12 @@ patch code:
       title. Kept out of `profile.json` for the same reason as the Hue key: a profile is
       meant to be shared, and which process a page follows on one machine should not
       travel to another.
+- [ ] **Reconsider the default now that the hardware is here.** Following the focused
+      app reads very differently on a physical deck than it did in a window: eighteen
+      screens on the desk changing by themselves while you type is far more insistent
+      than a panel that changed while you watched it. Nothing is wrong with the
+      feature — it may simply want to be off by default, or slower, or limited to
+      pages the user has actually built.
 - [ ] Explicit match rules — window-title regex, so one browser can drive different
       pages depending on the site. Today the match is process name against app name.
 - [ ] A per-app "never follow this one" opt-out
@@ -170,15 +300,45 @@ Remaining:
       once aims step two at a menu that has not opened yet. A bare modifier is a valid
       step (that is how KeyTips are raised) and the splitter leaves `Ctrl+,` alone.
       Verified end to end from an MCP proposal through to Excel opening the dialog.
+- [x] **Press, hold and repeat.** The device reports both edges explicitly, so a key
+      can mean one thing tapped and another held, and volume can keep moving while the
+      finger stays down. Threshold 450 ms, repeat every 140 ms.
+
+      A key with a hold action cannot fire on the way down — until the finger lifts,
+      nobody knows which of the two was meant. Everything without one stays instant, so
+      no ordinary key got slower.
+
+      This is what turns fifteen keys into thirty without a single folder, and it is
+      deliberately not being used for that yet. **Decided 04.08.2026: volume only.**
+      A gesture spread everywhere before anyone knows where it earns its place becomes
+      something the user has to learn rather than something that helps them.
+
+      Revisit when a second real use turns up. The app key used to be the candidate,
+      and is less so now: it launches every time, and additionally opens the app's page
+      when the app was already running. Asking the shell to start something that is
+      already started is how Windows brings an application forward, and the only thing
+      that works for one sitting in the tray — Steam was the case that proved it, with
+      nine processes, no main window handle on any of them, and its real window hidden
+      rather than minimised.
 - [ ] Per-key step delay — 90 ms is a guess that held on one machine. Make it
       configurable if a slower one needs longer.
 These four are what every other deck application ships with, including the cheapest.
 Nothing here is unknown; they are an evening each, and until they exist "ahead on
 features" is a claim that does not survive being looked at.
 
-- [ ] Text macro
-- [ ] Run program or script
-- [ ] Open URL, file or folder
+- [x] **Run a program or script.** Path, arguments, working directory, and two
+      switches: use the shell or not, hide the window or not. A Test button, because
+      the difference between a path that works and one that nearly works does not show
+      in a text box. No focus handover — unlike a hotkey this does not go through
+      whatever window is in front, which is the whole reason it exists.
+
+      Deliberately not reachable over MCP. An agent proposes hotkeys and nothing else:
+      a key that types Ctrl+S and a key that starts an executable are different kinds
+      of thing, and only one should be suggestible by software.
+- [x] **Open a link.** A web address, a file or a folder. Technically a narrow case of
+      the run action, kept separate anyway — telling somebody to configure "run a
+      program" in order to open a bookmark is how software ends up feeling like it was
+      written for the person who wrote it. A missing `https://` is filled in.
 - [ ] **Page switch — a key that opens a page, which is also folders.** These are one
       feature, not two: a folder is a key that opens a page, with a label and an icon on
       it. `Home → Utvikling → VS Code → its hotkeys` already works structurally — the
@@ -265,6 +425,12 @@ Still open — **Thomas is thinking about these two**:
 
 - [ ] Per-key **background colour and custom icon file** — the same colour editor the
       widgets already have, pointed at a key. Label text is done.
+- [ ] **A default cell background the user picks.** Black is the default today and
+      should stay it: it is what the physical bezel and the unlit gaps look like, so
+      anything else makes the deck read as a grid of tiles rather than one surface.
+      But it is a preference, and somebody will want a dark blue or a plain white deck.
+      Belongs next to the label-rendering panel, which is where the other visual
+      defaults already live.
 - [ ] More than one sub-page per app
 - [x] **Reorder by dragging between cells** — drag a key onto another and they swap;
       onto an empty one and it moves. This forced the press to move from mouse-down to
@@ -301,8 +467,8 @@ checksums from a version tag. What remains is reducing the friction of the downl
 itself. **Do none of this before the transport works**; a release that cannot drive
 the hardware invites "does it actually work?" as issue #1.
 
-- [ ] Publish the repository (Apache-2.0, `LICENSE` and `CREDITS.md` are ready)
-- [ ] Set `AppUrl` in `installer/dotstream.iss` to the real repository URL
+- [x] Publish the repository (Apache-2.0, `LICENSE` and `CREDITS.md` are ready)
+- [x] Set `AppUrl` in `installer/dotstream.iss` to the real repository URL
 - [ ] **Apply to [SignPath Foundation](https://signpath.org/)** for free code signing.
       Requires a public repo, an OSI licence and CI-produced builds — all satisfied.
       Takes an application, so start early. Note it is OV, not EV: it removes
@@ -373,7 +539,43 @@ a scope ordinary applications are not given. Do not promise these.
       is precisely not when you want mute. Register a global keybind inside Discord
       (`Ctrl+Alt+F9`, or F13–F24) and have the key send that instead.
 
-## 10. Nice to have
+## 10. Motion, now that it turns out to be free
+
+The deck sustains thirty frames per second across all eighteen cells, measured. That
+was assumed impossible and is not. Worth using sparingly — constant movement is what
+makes a dashboard unreadable — but these have earned a look:
+
+- [ ] A key that is *doing something* should say so: a spinner while a script runs, a
+      ring while an agent works. Today a long action looks identical to a dead key.
+- [ ] Media progress as a sweeping ring rather than a number
+- [ ] A brief press animation, so a key that did nothing is distinguishable from one
+      that never registered the press
+- [ ] Transitions on page change
+
+## 11. A phone or tablet as a second surface
+
+The GameGlass idea: a touchscreen that becomes another control panel. Architecturally
+this is **a third transport** and almost nothing else — `IDeckTransport` already has
+two implementations and `MirroringTransport` already proves several can run side by
+side. A browser takes the same cell images and sends back the same key indices; pages,
+actions, hotkeys and the MCP layer never learn the difference. The HTTP server exists
+too, serving MCP on 8787.
+
+- [ ] **Pairing has to come first, and it is the only genuinely hard part.** Reaching a
+      phone means binding to the network instead of `127.0.0.1`, and at that moment
+      there is a control surface for this machine open on the LAN — one that presses
+      keys, runs programs and sends hotkeys. Everything so far has been loopback for
+      exactly that reason. Needs a one-time code shown on the PC, a token stored on the
+      phone, and a way to revoke it.
+- [ ] **Mirror first, decide later whether it may be more.** A screen is not bound to
+      fifteen keys at 100×100 — GameGlass has sliders, dials and large panels. Mirroring
+      keeps one thing to build and one thing to learn; letting the web surface grow its
+      own controls makes it a better tool and a second product to maintain. Start by
+      mirroring and see what people actually reach for.
+- [ ] Cell images are already JPEG. Pushing them over a WebSocket and posting an index
+      back is most of the work.
+
+## 12. Nice to have
 
 - [ ] AI-generated SVG glyphs — describe the button, get an icon in the house style.
       No image model needed; an 85×85 monochrome glyph is well within text generation.
@@ -398,6 +600,10 @@ a scope ordinary applications are not given. Do not promise these.
       Two things are cheap now and expensive later:
       - [ ] `DeckKeyEventArgs` carries only a protocol index, so a press has no sender.
             Adding identity later means touching every handler it flows through.
+      - Note: the measured unit **does** report a serial number (`0300D0781510`), and
+        Windows uses it in the instance ID instead of a port path. So identity survives
+        a move to another port after all. The open question is no longer whether an
+        identifier exists, but whether two units ship the same one.
       - [ ] The profile knows one deck. If decks are ever to hold different pages it
             needs a device dimension, and adding one after 1.0 means migrating profiles
             that already exist — the expensive kind of change.

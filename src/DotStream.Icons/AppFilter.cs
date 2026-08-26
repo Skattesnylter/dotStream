@@ -50,8 +50,9 @@ public static class AppFilter
         ArgumentNullException.ThrowIfNull(app);
 
         // Packaged apps are always real apps - Store and MSIX installs never show up
-        // here as help files, so they skip the heuristics entirely.
-        if (app.IsPackaged) return true;
+        // here as help files, so they skip the heuristics entirely. A Steam game is
+        // the same case, and more so: the list it came from contains nothing else.
+        if (app.IsPackaged || app.SteamAppId is not null) return true;
 
         string id = app.AppUserModelId;
 

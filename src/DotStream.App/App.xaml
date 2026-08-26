@@ -136,6 +136,19 @@
             <Setter Property="FontSize" Value="11.5" />
             <Setter Property="HasDropShadow" Value="False" />
             <Setter Property="MaxWidth" Value="320" />
+
+            <!-- MaxWidth alone truncates rather than wraps: a plain string becomes a
+                 TextBlock that does not wrap, so the width just clips it and the end of
+                 the sentence is gone. Every tooltip here is text, so one template that
+                 wraps covers all of them. -->
+            <Setter Property="ContentTemplate">
+                <Setter.Value>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}" TextWrapping="Wrap" LineHeight="16" />
+                    </DataTemplate>
+                </Setter.Value>
+            </Setter>
+
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToolTip">

@@ -13,6 +13,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using DotStream.App.Mcp;
 using DotStream.Core;
+using DotStream.Hid;
 using DotStream.Icons;
 using DotStream.Media;
 using DotStream.Rendering;
@@ -40,7 +41,6 @@ public partial class MainWindow : Window, IDeckAgent
     private const string RootPageId = "root";
 
     private readonly DeckSimulatorControl _deckView = new();
-    private readonly CellRenderer _renderer = new();
     private readonly DeckNavigator _navigator = new();
     private readonly MediaHub _media = new();
     private readonly Dictionary<string, DeckPage> _pages = [];
@@ -50,10 +50,28 @@ public partial class MainWindow : Window, IDeckAgent
     private readonly LabelStore _labels = LabelStore.Load();
     private readonly MatchStore _matches = MatchStore.Load();
 
+    /// <summary>
+    /// Rebuilt whenever the cell size changes, which is why it is not readonly: the
+    /// renderer draws at a fixed size and there is nothing to adjust after the fact.
+    /// </summary>
+    private CellRenderer _renderer;
+
     private ActionCatalog? _catalog;
-    private SimulatorTransport? _transport;
+    private IDeckTransport? _transport;
+    private MirroringTransport? _mirror;
+
+    /// <summary>
+    /// The rotation currently on the hardware, which is not the same as the saved one
+    /// while the calibration window is open. Kept separate so a preview cannot be
+    /// written to settings.json by something unrelated saving at the wrong moment.
+    /// </summary>
+    private int _liveRotation;
+
+    /// <summary>The attached device's own product string, kept for diagnostics.</summary>
+    private string? _deckProduct;
     private DeckController? _controller;
     private IReadOnlyList<InstalledApp> _apps = [];
+    private int _steamGameCount;
 
     private Point _dragOrigin;
 
@@ -93,6 +111,9 @@ public partial class MainWindow : Window, IDeckAgent
         InitializeComponent();
         WindowTheme.UseDarkTitleBar(this);
 
+        _renderer = new CellRenderer(_settings.CellPixels);
+        _liveRotation = _settings.CellRotation;
+
         DeckHost.Content = _deckView;
 
         _deckView.CellRightClicked += OnCellRightClicked;
@@ -119,18 +140,81 @@ public partial class MainWindow : Window, IDeckAgent
         _tray.OpenRequested += (_, _) => Dispatcher.Invoke(RestoreFromTray);
         _tray.ExitRequested += (_, _) => Dispatcher.Invoke(ExitApplication);
 
-        _transport = new SimulatorTransport(_deckView);
+        // Real hardware wins when it is plugged in, but the window keeps drawing
+        // either way: with a deck attached the two run in parallel, so what you see on
+        // screen is what is on the desk. Nothing above this line knows the difference.
+        var screen = new SimulatorTransport(_deckView);
+
+        // Always the mirror, whether or not a deck is attached right now. It watches for
+        // one either way, which is what makes plugging in later work at all - before
+        // this, a deck that arrived after startup was never looked for again, and the
+        // only cure was restarting the application.
+        //
+        // The rotation goes on every transport the mirror opens, including the
+        // replacement built after a reconnect - which would otherwise come back at its
+        // default and quietly undo a calibration.
+        var mirror = new MirroringTransport(HidTransport.TryOpen(), screen, HidTransport.TryOpen,
+            device =>
+            {
+                if (device is not HidTransport hid) return;
+
+                hid.Rotation = _liveRotation;
+
+                // The callback sees every device the mirror opens, including the one
+                // built after a reconnect, so this is the one place the product string
+                // is always current without the mirror having to know what HID is.
+                _deckProduct = hid.ProductName;
+            });
+
+        _mirror = mirror;
+
+        mirror.Disconnected += (_, _) => Dispatcher.Invoke(() =>
+            StatusLabel.Text = "The deck was unplugged. The window still works; plug it back in and it picks up again.");
+
+        // A deck that turns up shows its own boot logo, and only this side knows what
+        // belongs there instead. Clearing first matters: RepaintKeys covers 1-15, while
+        // the info cells wait for their widget interval, so without it the vendor logo
+        // sits in column five for as long as a second.
+        mirror.Reconnected += (_, _) => Dispatcher.InvokeAsync(async () =>
+        {
+            await mirror.ClearAllAsync();
+
+            _controller?.InvalidateAll();
+            _widgetDue.Clear();
+
+            RepaintKeys(highPriority: true);
+
+            ShowTransport();
+            StatusLabel.Text = "The deck is connected.";
+        });
+
+        _transport = mirror;
+
         _controller = new DeckController(_transport);
         _controller.KeyPressed += OnKeyPressed;
+        _controller.KeyReleased += OnKeyReleased;
         _controller.UploadFailed += (_, ex) =>
             Dispatcher.Invoke(() => StatusLabel.Text = "Upload failed: " + ex.Message);
 
         await _transport.ConnectAsync();
-        TransportLabel.Text = "  -  " + _transport.Name;
+
+        // The deck powers on showing the vendor's own logo on a white ground, and its
+        // cells are persistent framebuffers - an image only overwrites the pixels it
+        // covers, so whatever is not painted stays. Reconnecting already cleared for
+        // this reason; a cold start needs it just as much, and skipping it was why
+        // white kept showing through between cells on the first run after plugging in.
+        await _transport.ClearAllAsync();
+
+        ShowTransport();
+
         BrightnessSlider.Value = _settings.Brightness;
         await _transport.SetBrightnessAsync(_settings.Brightness);
 
         UpdateFollowButton();
+
+        // Read from the registry rather than remembered in settings.json, so the tick
+        // still tells the truth after somebody turns it off in Task Manager.
+        StartWithWindowsMenuItem.IsChecked = StartWithWindows.IsEnabled;
 
         UpdateMcpMenuItem();
         if (_settings.McpEnabled) StartMcp(announce: false);
@@ -153,6 +237,10 @@ public partial class MainWindow : Window, IDeckAgent
         _timer.Start();
 
         await LoadAppsAsync();
+
+        // Last, not first: started at login the deck should come up painted, and hiding
+        // before the apps are loaded would leave it blank for as long as that takes.
+        if (App.StartHidden) HideToTray();
     }
 
     /// <summary>
@@ -188,9 +276,25 @@ public partial class MainWindow : Window, IDeckAgent
         Activate();
     }
 
-    private void ExitApplication()
+    private async void ExitApplication()
     {
+        if (_exiting) return;
         _exiting = true;
+
+        // Leave the deck dark. The cells hold their last image with nothing running to
+        // explain it, so a closed application otherwise looks like a live one - and the
+        // keys under those pictures no longer do anything.
+        //
+        // This has to happen before Close(), not in Closed. That handler is async void,
+        // so WPF carries on tearing the application down at its first await, and the
+        // mirroring transport awaits the dispatcher before it writes to the device -
+        // the process was gone before CLE ever left the machine.
+        if (_transport is not null)
+        {
+            try { await _transport.ClearAllAsync(); }
+            catch (Exception ex) { DeckLog.Note("shutdown", "could not clear the deck: " + ex.Message); }
+        }
+
         Close();
     }
 
@@ -204,6 +308,9 @@ public partial class MainWindow : Window, IDeckAgent
         _watcher?.Dispose();
         _tray?.Dispose();
 
+        // The deck was cleared in ExitApplication, which is early enough for the write
+        // to reach it. Anything that gets here without going through that - a log-off,
+        // a kill - leaves the last picture up, and the cold-start clear handles it.
         if (_controller is not null)
             await _controller.DisposeAsync();
     }
@@ -235,13 +342,18 @@ public partial class MainWindow : Window, IDeckAgent
 
         if (!atRoot) ShowActionsFor(page);
 
-        // Back at home means nothing is being held any more - whatever the user was
-        // doing, they have finished doing it.
-        if (atRoot)
-        {
-            _pinnedUntil = DateTime.MinValue;
-            _autoPushedPageId = null;
-        }
+        // Arriving home closes the page automatic switching opened, but it must not
+        // clear the pin.
+        //
+        // It used to. Pressing Back set the pin, the pop landed here, the pin was wiped,
+        // and the very next foreground event pushed the same page straight back - so
+        // Back looked broken. Press it twice in a row and the second press arrived
+        // during the instant home was showing, where cell 15 is not Back at all: on
+        // this profile it is Excel, which duly launched.
+        //
+        // The pin means "the user just did something deliberate, leave the deck alone
+        // for a moment". Going home is exactly such an act. It expires on its own.
+        if (atRoot) _autoPushedPageId = null;
 
         RepaintKeys(highPriority: true);
     }
@@ -353,6 +465,129 @@ public partial class MainWindow : Window, IDeckAgent
 
             _controller.Update(index, _renderer.Render(visual), highPriority);
         }
+    }
+
+    /// <summary>
+    /// Names the transport in the toolbar, with the device's own product string on
+    /// hover.
+    ///
+    /// Split because that string is a factory placeholder on the measured unit -
+    /// "HOTSPOTEKUSB HID DEMO" - which reads as a defect on screen while still being
+    /// the first thing worth knowing when two variants behave differently.
+    /// </summary>
+    private void ShowTransport()
+    {
+        if (_transport is null) return;
+
+        TransportLabel.Text = "  -  " + _transport.Name;
+
+        string? product = _transport.IsConnected ? _deckProduct : null;
+
+        TransportLabel.ToolTip = product is null
+            ? null
+            : $"The device reports itself as “{product}”.";
+
+        if (product is not null) DeckLog.Out("deck", $"{_transport.Name}  product string: {product}");
+    }
+
+    // ----------------------------------------------------------------- startup
+
+    private void OnToggleStartWithWindows(object sender, RoutedEventArgs e)
+    {
+        bool wanted = StartWithWindowsMenuItem.IsChecked;
+
+        if (!StartWithWindows.Set(wanted))
+        {
+            // Put the tick back where reality is, rather than leaving a checkbox
+            // claiming something that did not happen.
+            StartWithWindowsMenuItem.IsChecked = !wanted;
+            StatusLabel.Text = "Windows would not let dotStream change that. View > Console has the details.";
+            return;
+        }
+
+        StatusLabel.Text = wanted
+            ? "dotStream will start in the tray when you sign in."
+            : "dotStream will no longer start with Windows.";
+    }
+
+    // ------------------------------------------------------------- calibration
+
+    /// <summary>
+    /// Opens the calibration window and keeps the deck in step with its sliders.
+    ///
+    /// The window owns nothing. It asks for a geometry and this draws it, which is why
+    /// calibrating no longer means closing dotStream first: the transport that is
+    /// already open does the work, and you calibrate against your own keys rather than
+    /// a test image in a separate tool.
+    /// </summary>
+    private async void OnCalibrate(object sender, RoutedEventArgs e)
+    {
+        int size = _settings.CellPixels;
+        int rotation = _settings.CellRotation;
+
+        var window = new CalibrationWindow(
+            _transport?.Name ?? "No deck attached - the window still shows the result",
+            size, rotation, ApplyCellGeometryAsync)
+        {
+            Owner = this
+        };
+
+        bool saved = window.ShowDialog() == true;
+
+        if (saved)
+        {
+            _settings.CellPixels = window.CellPixels;
+            _settings.CellRotation = window.CellRotation;
+            _settings.Save();
+
+            StatusLabel.Text = $"Cells calibrated to {window.CellPixels}x{window.CellPixels} at {window.CellRotation}°.";
+        }
+        else
+        {
+            StatusLabel.Text = "Calibration cancelled.";
+        }
+
+        // Either way the deck is showing whatever the sliders last asked for, which may
+        // be the measuring pattern. Put the real keys back.
+        await ApplyCellGeometryAsync(_settings.CellPixels, _settings.CellRotation, pattern: false);
+    }
+
+    /// <summary>
+    /// Redraws the whole deck at a given cell geometry.
+    ///
+    /// Clearing first is not optional. A cell is a persistent framebuffer, so shrinking
+    /// the image leaves a ring of the larger one behind - and during calibration that
+    /// ring is exactly what somebody is trying to measure.
+    /// </summary>
+    private async Task ApplyCellGeometryAsync(int size, int rotation, bool pattern)
+    {
+        if (_controller is null) return;
+
+        _renderer = new CellRenderer(size);
+
+        _liveRotation = rotation;
+        _mirror?.ReconfigureDevice();
+
+        if (_transport is not null) await _transport.ClearAllAsync();
+
+        _controller.InvalidateAll();
+
+        if (pattern)
+        {
+            foreach (int index in DeckLayout.AllCells())
+            {
+                BitmapSource image = CalibrationPattern.Render(size, index);
+                _controller.Update(index, new RenderedCell(image, $"calibration-{size}-{index}"), highPriority: true);
+            }
+
+            return;
+        }
+
+        // Widgets redraw on their own schedule, so without this the info cells sit
+        // blank for as long as their interval after leaving the pattern behind.
+        _widgetDue.Clear();
+
+        RepaintKeys(highPriority: true);
     }
 
     /// <summary>
@@ -472,6 +707,10 @@ public partial class MainWindow : Window, IDeckAgent
                             BuildHotkeyButton(hotkey),
                         "text" when JsonSerializer.Deserialize<TextMacroBinding>(cell.Value) is { } macro =>
                             BuildTextButton(macro),
+                        "run" when JsonSerializer.Deserialize<RunBinding>(cell.Value) is { } run =>
+                            BuildRunButton(run),
+                        "link" when JsonSerializer.Deserialize<LinkBinding>(cell.Value) is { } link =>
+                            BuildLinkButton(link),
                         _ => null
                     };
 
@@ -582,18 +821,104 @@ public partial class MainWindow : Window, IDeckAgent
                 return;
             }
 
-            try
+            _heldSince[e.ProtocolIndex] = DateTime.UtcNow;
+
+            // A key that repeats fires straight away and then keeps going. One that has
+            // a separate hold action cannot fire yet - until the finger lifts, nobody
+            // knows which of the two was meant. Everything else stays instant.
+            if (button.RepeatWhileHeld)
             {
-                await button.OnPress();
-            }
-            catch (Exception ex)
-            {
-                StatusLabel.Text = "Action failed: " + ex.Message;
+                await Fire(button);
+                StartRepeating(e.ProtocolIndex, button);
+                return;
             }
 
-            RepaintKeys(highPriority: true);
+            if (button.OnHold is not null) return;
+
+            await Fire(button);
         });
     }
+
+    /// <summary>How long a key has to be held before it counts as a hold rather than a press.</summary>
+    private static readonly TimeSpan HoldThreshold = TimeSpan.FromMilliseconds(450);
+
+    /// <summary>Gap between repeats while a key is held down.</summary>
+    private static readonly TimeSpan RepeatInterval = TimeSpan.FromMilliseconds(140);
+
+    private readonly Dictionary<int, DateTime> _heldSince = [];
+    private readonly Dictionary<int, CancellationTokenSource> _repeating = [];
+
+    private void OnKeyReleased(object? sender, DeckKeyEventArgs e)
+    {
+        Dispatcher.Invoke(async () =>
+        {
+            StopRepeating(e.ProtocolIndex);
+
+            if (!_heldSince.Remove(e.ProtocolIndex, out DateTime pressedAt)) return;
+
+            DeckButton? button = _navigator.Current?.Get(e.ProtocolIndex);
+            if (button?.OnHold is null) return;
+
+            TimeSpan held = DateTime.UtcNow - pressedAt;
+
+            // The press was deferred on the way down, so one of the two has to happen
+            // now - which one is the only thing the release tells us.
+            await Fire(held >= HoldThreshold ? button.OnHold : button.OnPress);
+
+            if (held >= HoldThreshold)
+                DeckLog.In("key", $"key {e.ProtocolIndex} held for {held.TotalMilliseconds:0} ms");
+        });
+    }
+
+    private void StartRepeating(int protocolIndex, DeckButton button)
+    {
+        StopRepeating(protocolIndex);
+
+        var cts = new CancellationTokenSource();
+        _repeating[protocolIndex] = cts;
+
+        _ = Dispatcher.InvokeAsync(async () =>
+        {
+            try
+            {
+                // A pause before the first repeat, so a normal tap does not fire twice.
+                await Task.Delay(HoldThreshold, cts.Token);
+
+                while (!cts.IsCancellationRequested)
+                {
+                    await Fire(button);
+                    await Task.Delay(RepeatInterval, cts.Token);
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
+    }
+
+    private void StopRepeating(int protocolIndex)
+    {
+        if (!_repeating.Remove(protocolIndex, out CancellationTokenSource? cts)) return;
+
+        cts.Cancel();
+        cts.Dispose();
+    }
+
+    private async Task Fire(Func<Task>? action)
+    {
+        if (action is null) return;
+
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            StatusLabel.Text = "Action failed: " + ex.Message;
+        }
+
+        RepaintKeys(highPriority: true);
+    }
+
+    private Task Fire(DeckButton button) => Fire(button.OnPress);
 
     /// <summary>
     /// Editor-only affordance - the hardware has no right-click, so nothing in the
@@ -738,6 +1063,28 @@ public partial class MainWindow : Window, IDeckAgent
                     Assign(protocolIndex, rebuilt, "a hotkey");
             };
             menu.Items.Add(editHotkey);
+        }
+
+        if (button.Tag is LinkBinding linkBinding)
+        {
+            var editLink = new MenuItem { Header = "Change the address..." };
+            editLink.Click += (_, _) =>
+            {
+                if (CreateLinkButton(linkBinding) is { } rebuilt)
+                    Assign(protocolIndex, rebuilt, "a link");
+            };
+            menu.Items.Add(editLink);
+        }
+
+        if (button.Tag is RunBinding runBinding)
+        {
+            var editRun = new MenuItem { Header = "Change what it runs..." };
+            editRun.Click += (_, _) =>
+            {
+                if (CreateRunButton(runBinding) is { } rebuilt)
+                    Assign(protocolIndex, rebuilt, "a program");
+            };
+            menu.Items.Add(editRun);
         }
 
         if (button.Tag is TextMacroBinding textBinding)
@@ -930,28 +1277,46 @@ public partial class MainWindow : Window, IDeckAgent
 
     private Task OnAppButtonPressed(InstalledApp app)
     {
-        // Running -> reveal the app's own page. Not running -> start it. This is the
-        // whole interaction: one key, two meanings, decided by the app's state.
-        if (_media.HasSessionFor(app.AppUserModelId, app.Name) || RunningApps.IsRunning(app))
-        {
-            _navigator.Push(GetOrCreateAppPage(app));
-            Pin();
-            StatusLabel.Text = $"{app.Name} is running - opened its page.";
-            return Task.CompletedTask;
-        }
+        // A Steam game answers none of the usual process questions - Steam starts it,
+        // sometimes behind a launcher - so ask Steam instead. It keeps a Running flag
+        // per app, which is both cheaper and right.
+        bool running = app.SteamAppId is { } gameId
+            ? SteamLibrary.IsRunning(gameId)
+            : _media.HasSessionFor(app.AppUserModelId, app.Name) || RunningApps.IsRunning(app);
 
+        // Launch either way. Asking the shell to start something that is already
+        // running is how Windows itself brings an application forward, and it is the
+        // only way that works for one sitting in the tray.
+        //
+        // Reaching for the window handle instead was tried and measured against Steam,
+        // which is instructive: nine processes, not one of them reporting a main
+        // window, and the real window - class SDL_app, title "Steam" - present but
+        // hidden rather than minimised. Forcing a window an application deliberately
+        // hid is fighting it. Launching asks it, and its own single-instance handling
+        // does the rest.
         try
         {
             AppsFolder.Launch(app);
             DeckLog.Out("launch", $"{app.Name}  ({app.LaunchUri})");
-            StatusLabel.Text = $"Launched {app.Name}. Press again to open its page.";
         }
         catch (Exception ex)
         {
             DeckLog.Note("launch", $"{app.Name} failed: {ex.Message}");
             StatusLabel.Text = $"Could not launch {app.Name}: {ex.Message}";
+            return Task.CompletedTask;
         }
 
+        if (!running)
+        {
+            StatusLabel.Text = $"Launched {app.Name}. Press again to open its page.";
+            return Task.CompletedTask;
+        }
+
+        // Already running, so the press is about getting to its controls.
+        _navigator.Push(GetOrCreateAppPage(app));
+        Pin();
+
+        StatusLabel.Text = $"{app.Name} to the front, and its page is open.";
         return Task.CompletedTask;
     }
 
@@ -966,10 +1331,12 @@ public partial class MainWindow : Window, IDeckAgent
             "mcp.call" => CreateMcpButton(existing: null),
             "input.hotkey" => CreateHotkeyButton(existing: null),
             "input.text" => CreateTextButton(existing: null),
+            "input.run" => CreateRunButton(existing: null),
+            "input.link" => CreateLinkButton(existing: null),
             _ => null
         };
 
-        if (action.Id is "mcp.call" or "input.hotkey" or "input.text")
+        if (action.Id is "mcp.call" or "input.hotkey" or "input.text" or "input.run" or "input.link")
         {
             if (configured is not null) Assign(protocolIndex, configured, action.Name);
             return;
@@ -977,6 +1344,100 @@ public partial class MainWindow : Window, IDeckAgent
 
         Assign(protocolIndex, action.Create(_navigator), action.Name);
     }
+
+    private DeckButton? CreateLinkButton(LinkBinding? existing)
+    {
+        var dialog = new LinkWindow(existing, _renderer) { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Result is null) return null;
+
+        return BuildLinkButton(dialog.Result);
+    }
+
+    private DeckButton BuildLinkButton(LinkBinding link) => new()
+    {
+        Tag = link,
+        Visual = () =>
+        {
+            var visual = new CellVisual
+            {
+                Background = Color.FromRgb(0x11, 0x16, 0x1C),
+                BackgroundGradientTo = Color.FromRgb(0x0A, 0x0C, 0x0F),
+                Label = link.DisplayLabel,
+                LabelColor = Colors.White,
+                LabelSize = _textLab.LabelSize,
+                LabelPosition = LabelPosition.Bottom,
+                ReservedLabelLines = 1
+            };
+
+            if (link.FileImage is { } image)
+                return visual with { Icon = image, IconScale = 0.68 };
+
+            return link.ResolvedIcon is { } icon
+                ? icon.ApplyTo(visual, Color.FromRgb(0x6F, 0xA8, 0xDC))
+                : visual;
+        },
+        OnPress = () =>
+        {
+            string outcome = link.Open();
+
+            DeckLog.Out("link", link.Target);
+            StatusLabel.Text = outcome;
+
+            return Task.CompletedTask;
+        }
+    };
+
+    private DeckButton? CreateRunButton(RunBinding? existing)
+    {
+        var dialog = new RunWindow(existing, _renderer) { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Result is null) return null;
+
+        return BuildRunButton(dialog.Result);
+    }
+
+    private CellVisual RunVisual(RunBinding run)
+    {
+        var visual = new CellVisual
+        {
+            Background = Color.FromRgb(0x18, 0x11, 0x1C),
+            BackgroundGradientTo = Color.FromRgb(0x0C, 0x0A, 0x0E),
+            Label = run.DisplayLabel,
+            LabelColor = Colors.White,
+            LabelSize = _textLab.LabelSize,
+            LabelPosition = LabelPosition.Bottom,
+            ReservedLabelLines = 1
+        };
+
+        if (run.FileImage is { } image)
+            return visual with { Icon = image, IconScale = 0.68 };
+
+        return run.ResolvedIcon is { } icon
+            ? icon.ApplyTo(visual, Color.FromRgb(0xC9, 0x8B, 0xE2))
+            : visual with
+            {
+                BigText = "Run",
+                BigTextColor = Color.FromRgb(0xC9, 0x8B, 0xE2),
+                BigTextScale = 0.38
+            };
+    }
+
+    private DeckButton BuildRunButton(RunBinding run) => new()
+    {
+        Tag = run,
+        Visual = () => RunVisual(run),
+        OnPress = () =>
+        {
+            // No focus handover here. Unlike a hotkey or a text macro, this does not
+            // go through whatever window happens to be in front - which is the whole
+            // reason the action exists.
+            string outcome = run.Start();
+
+            DeckLog.Out("run", $"{run.Path} {run.Arguments}".TrimEnd());
+            StatusLabel.Text = outcome;
+
+            return Task.CompletedTask;
+        }
+    };
 
     private DeckButton? CreateTextButton(TextMacroBinding? existing)
     {
@@ -1980,15 +2441,42 @@ public partial class MainWindow : Window, IDeckAgent
     {
         AppCountLabel.Text = "loading...";
 
+        IReadOnlyList<InstalledApp> shellApps;
+
         try
         {
-            _apps = await AppsFolder.EnumerateAsync(iconSize: 256);
+            shellApps = await AppsFolder.EnumerateAsync(iconSize: 256);
         }
         catch (Exception ex)
         {
             AppCountLabel.Text = "failed: " + ex.Message;
             return;
         }
+
+        // Steam games are invisible to the shell - Steam stopped writing Start-menu
+        // entries - so they are read from Steam's own bookkeeping and appended. A
+        // failure here must not cost the user the app list they did get.
+        IReadOnlyList<InstalledApp> games = [];
+
+        try
+        {
+            games = await Task.Run(() => SteamLibrary.Enumerate());
+            DeckLog.Out("steam-library", $"{games.Count} game(s) from {SteamLibrary.InstallPath ?? "no Steam install"}");
+        }
+        catch (Exception ex)
+        {
+            DeckLog.Out("steam-library", ex.Message);
+        }
+
+        _apps = games.Count == 0
+            ? shellApps
+            : [.. shellApps.Concat(games)
+                    .OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase)];
+
+        _steamGameCount = games.Count;
+
+        // Anyone who customised their app list did so before games could appear in it.
+        _selection.AdoptNewSource(games);
 
         ApplyFilter(SearchBox.Text);
 
@@ -2175,9 +2663,13 @@ public partial class MainWindow : Window, IDeckAgent
         List<InstalledApp> visible = Search(VisibleApps, query);
         AppList.ItemsSource = visible;
 
+        string source = _steamGameCount > 0
+            ? $"shell:AppsFolder + {_steamGameCount} Steam"
+            : "shell:AppsFolder";
+
         AppCountLabel.Text = visible.Count == _apps.Count
-            ? $"{_apps.Count} found via shell:AppsFolder"
-            : $"{visible.Count} of {_apps.Count} via shell:AppsFolder";
+            ? $"{_apps.Count} found via {source}"
+            : $"{visible.Count} of {_apps.Count} via {source}";
     }
 
     /// <summary>

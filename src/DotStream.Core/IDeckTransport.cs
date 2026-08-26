@@ -28,6 +28,24 @@ public interface IDeckTransport : IAsyncDisposable
     /// </summary>
     event EventHandler<DeckKeyEventArgs>? KeyPressed;
 
+    /// <summary>
+    /// Raised when it is let go again.
+    ///
+    /// The hardware reports both edges explicitly - byte 11 of the input report is
+    /// 0x01 on the way down and 0x00 on the way up - so nothing has to be inferred by
+    /// comparing frames. Having the release is what makes a long press, and repeating
+    /// while held, possible at all.
+    /// </summary>
+    event EventHandler<DeckKeyEventArgs>? KeyReleased;
+
+    /// <summary>
+    /// The device is gone - unplugged, or otherwise no longer answering.
+    ///
+    /// Raised once, not on every failed write. A transport with nothing physical
+    /// behind it never raises it at all.
+    /// </summary>
+    event EventHandler? Disconnected;
+
     Task ConnectAsync(CancellationToken ct = default);
 
     /// <summary>0-100. Firmware clamps above 100.</summary>

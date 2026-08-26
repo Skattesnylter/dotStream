@@ -25,9 +25,9 @@
     <!-- The default for local builds only. Releases are built from the tag: the
          workflow passes -p:Version and /DAppVersion, so this value never reaches an
          artefact and cannot drift into one. -->
-    <Version>0.9.0</Version>
-    <FileVersion>0.9.0.0</FileVersion>
-    <AssemblyVersion>0.9.0.0</AssemblyVersion>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
   </PropertyGroup>
 
   <!-- UseWindowsForms adds System.Drawing and System.Windows.Forms as implicit
@@ -65,6 +65,7 @@
     <ProjectReference Include="..\DotStream.Rendering\DotStream.Rendering.csproj" />
     <ProjectReference Include="..\DotStream.Icons\DotStream.Icons.csproj" />
     <ProjectReference Include="..\DotStream.Simulator\DotStream.Simulator.csproj" />
+    <ProjectReference Include="..\DotStream.Hid\DotStream.Hid.csproj" />
     <ProjectReference Include="..\DotStream.Media\DotStream.Media.csproj" />
   </ItemGroup>
 

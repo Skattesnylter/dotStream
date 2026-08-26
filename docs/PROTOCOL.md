@@ -100,42 +100,85 @@ Consequences:
 - Three cells at ~5 kB each is ~20 packets, not the ~160 a full-panel upload
   would have cost.
 
-**VERIFY:** the key numbering comes from the ZCube gist and pyajazz. The mapping
-of 16–18 onto column 5 is inferred from product photos plus the "18-position 6×3
-grid, `0x10`–`0x12` lack physical buttons" note. Encoded in exactly one place:
-`DeckLayout.cs`.
+**CONFIRMED 04.08.2026.** A numbered image was uploaded to each of the eighteen
+cells on a real AKP153E and read back off the device. Every position matched the
+arrangement above, including the placement of 16–18 in column 5. The numbering came
+from the ZCube gist and pyajazz and the column-5 mapping was inferred from product
+photos; both were right.
 
 ## 6. Images
 
-- **85×85 px, JPEG, ~q90.** VERIFY — the info cells may not match the keys.
-- Sent in 512-byte chunks after the `BAT` header; final chunk zero-padded.
-- Device replies with an ACK frame: `41 43 4B 00 00 4F 4B` — ASCII `ACK..OK`.
-- **Uploads must be serialised.** Starting a new image before the ACK arrives
-  corrupts the target cell. This is why `DeckController` exists.
+- **Cells are persistent framebuffers and `BAT` only writes where the image
+  reaches.** Anything the image does not cover keeps its previous contents. Send a
+  smaller image than the last one and a ring of the old one stays visible; this is
+  what shows up as a stubborn light border and as leftovers of the vendor logo.
+  Either always write a full-panel image, or `CLE` the cell first.
+- **Cell size and rotation are user settings**, not constants — `CellPixels` and
+  `CellRotation` in `settings.json`, with *View → Calibrate cells…* to set them
+  against the deck itself. The values below are this variant's, and the defaults.
+  Several VID/PID pairs ship under this product name and nobody has measured them
+  all; a wrong size does not fail cleanly, so the person holding the hardware needs
+  to be able to fix it without a rebuild.
+- **Cell size is 100×100, measured.** Not the 85×85 these notes used to claim, and
+  not the 126×126 AJAZZ's own AKP153 user guide recommends for custom icons — that
+  figure is presumably a source size their app rescales. A test pattern with a
+  coloured band on each edge was resized live against the hardware until all four
+  bands came out equally thick, which happens at exactly 100. Info cells 16–18
+  measure the same as the keys.
+- JPEG at ~q90 works. The manual also lists PNG, untested.
+- Chunk size is **one output report's worth**, not a fixed 512. On the `0300:3010`
+  variant that is 1024 payload bytes per write; the 512 in the older notes belongs
+  to the 513-byte variant.
+- The `41 43 4B 00 00 4F 4B` (`ACK..OK`) frame turns out to be the **input report
+  header**, carrying key events — see section 7. Whether it also acknowledges an
+  upload is unsettled.
+- **Serialisation is unproven.** Eighteen images were sent back to back with no
+  waiting and all of them arrived intact. Either this variant tolerates it or the
+  writes were slow enough not to matter. Do not remove the serialising queue in
+  `DeckController` on the strength of one test, but do not assume it is required
+  either.
 - Metadata matters: pyajazz reports the device dislikes EXIF. WPF's
   `JpegBitmapEncoder` writes minimal metadata, so this should be free.
 
 ### Orientation
 
-Documented as "90° rotation plus horizontal and vertical mirroring". Note that
-H+V mirroring *is* a 180° rotation, so the whole thing reduces to a plain **270°
-rotation** — which suggests whoever wrote that was describing something they had
-not fully worked out.
+**Confirmed: a plain 270° rotation, no mirroring.** Sent upright, a test "F"
+appeared rotated 90° clockwise on the deck; pre-rotating by 270° put it right and
+centred it correctly.
 
-Do not trust it. Brute-force all 8 orientations with an asymmetric test glyph
-(a large "F") and keep whichever renders upright. Five minutes, zero guessing.
+The older note called it "90° rotation plus horizontal and vertical mirroring".
+H+V mirroring *is* a 180° rotation, so that description reduces to the same 270°
+turn — the person who wrote it had the answer without simplifying it.
 
 ## 7. Input reports
 
+**Measured on a real AKP153E, 04.08.2026.** Every one of the fifteen keys was
+pressed and the frames captured. The format below is what the device actually
+sends, and it differs from the earlier notes in two ways that matter.
+
+Frames are 513 bytes. With the report-ID byte in front, everything shifts by one:
+
 ```
-Byte 0–8 : 0x00
-Byte 9   : cell index 1–15, or 0x00 for no event
-Byte 10+ : 0x00 padding
+Offset  Content
+0       0x00   report ID
+1–3     "ACK"  (41 43 4B)
+4–5     0x00 0x00
+6–7     "OK"   (4F 4B)
+8–9     0x00 0x00
+10      cell index, 1–15
+11      0x01 on press, 0x00 on release
+12+     0x00 padding
 ```
 
-- One frame per transition, **no press/release discriminator** on this protocol
-  version. Edges must be synthesised by diffing successive frames.
-- Frames shorter than 16 bytes are invalid and must be discarded.
+- **Press and release are explicit.** Byte 11 carries the state. The earlier note
+  said edges had to be synthesised by diffing successive frames — they do not.
+  Thirteen presses produced thirteen clean pairs.
+- **`ACK..OK` is the input frame header, not a separate upload acknowledgement.**
+  The same shape carries key events, which is why no ACK appeared when we listened
+  after an upload and then stopped.
+- **No contact bounce was observed.** The firmware debounces; one transition gives
+  exactly one frame.
+- Cell indices match the physical positions confirmed in section 5 exactly.
 - Cells 16–18 have no switch and never appear here.
 
 ## 8. Timing budget

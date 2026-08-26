@@ -54,6 +54,31 @@ public sealed class AppSelectionStore
         Save();
     }
 
+    /// <summary>
+    /// Takes in a source of apps that did not exist when the user last chose, so the
+    /// new entries are visible instead of silently absent.
+    ///
+    /// The selection is a list of what to show, which means anything appearing after it
+    /// was saved is hidden by default - correct for an app the user already declined,
+    /// wrong for a whole category they were never asked about. Steam games are that
+    /// second case. The check is whether *any* of them are named in the file: if some
+    /// are, the user has since made a real choice about this source and it is theirs to
+    /// keep, so nothing happens. That makes this a one-time adoption rather than a rule
+    /// that keeps overriding them.
+    /// </summary>
+    public void AdoptNewSource(IEnumerable<InstalledApp> apps)
+    {
+        if (Selected is null) return; // never customised; the heuristic covers it
+
+        var newcomers = apps.Select(a => a.AppUserModelId).ToList();
+        if (newcomers.Count == 0) return;
+        if (newcomers.Any(Selected.Contains)) return;
+
+        foreach (string id in newcomers) Selected.Add(id);
+
+        Save();
+    }
+
     /// <summary>Applies the selection, or the heuristic when nothing was ever chosen.</summary>
     public IEnumerable<InstalledApp> Apply(IEnumerable<InstalledApp> apps) =>
         Selected is null

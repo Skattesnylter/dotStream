@@ -5,9 +5,20 @@ namespace DotStream.App;
 
 public partial class App : Application
 {
+    /// <summary>
+    /// Started with --tray, so it should go straight to the tray without showing the
+    /// window. Set by the Run entry, so signing in does not throw a window at you.
+    /// </summary>
+    public static bool StartHidden { get; private set; }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        StartHidden = e.Args.Any(arg =>
+            arg.Equals("--tray", StringComparison.OrdinalIgnoreCase) ||
+            arg.Equals("/tray", StringComparison.OrdinalIgnoreCase));
+
         DispatcherUnhandledException += OnUnhandled;
     }
 

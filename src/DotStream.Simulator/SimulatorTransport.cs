@@ -24,6 +24,7 @@ public sealed class SimulatorTransport : IDeckTransport
         _dispatcher = view.Dispatcher;
 
         _view.CellPressed += (_, index) => KeyPressed?.Invoke(this, new DeckKeyEventArgs(index));
+        _view.CellReleased += (_, index) => KeyReleased?.Invoke(this, new DeckKeyEventArgs(index));
     }
 
     /// <summary>Fake per-cell upload cost. Set to zero to disable.</summary>
@@ -34,6 +35,18 @@ public sealed class SimulatorTransport : IDeckTransport
     public bool IsConnected { get; private set; }
 
     public event EventHandler<DeckKeyEventArgs>? KeyPressed;
+
+    /// <summary>
+    /// Mouse-up on a key. Real hardware reports both edges, so the simulator does too -
+    /// otherwise a long press works on the desk and does nothing on screen, and someone
+    /// setting up their deck before it arrives would be building against a lie.
+    /// </summary>
+    public event EventHandler<DeckKeyEventArgs>? KeyReleased;
+
+    /// <summary>Never raised: there is no cable to pull on a window.</summary>
+#pragma warning disable CS0067
+    public event EventHandler? Disconnected;
+#pragma warning restore CS0067
 
     public Task ConnectAsync(CancellationToken ct = default)
     {

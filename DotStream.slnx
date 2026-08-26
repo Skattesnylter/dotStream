@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/DotStream.App/DotStream.App.csproj" />
     <Project Path="src/DotStream.Core/DotStream.Core.csproj" />
+    <Project Path="src/DotStream.Hid/DotStream.Hid.csproj" />
     <Project Path="src/DotStream.Icons/DotStream.Icons.csproj" />
     <Project Path="src/DotStream.Media/DotStream.Media.csproj" />
     <Project Path="src/DotStream.Rendering/DotStream.Rendering.csproj" />

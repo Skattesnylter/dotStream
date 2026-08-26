@@ -22,7 +22,7 @@
 #define AppName       "dotStream"
 #define AppPublisher  "Thomas Blix"
 #define AppExeName    "dotStream.exe"
-#define AppUrl        "https://github.com/"
+#define AppUrl        "https://github.com/Skattesnylter/dotStream"
 
 [Setup]
 AppId={{8F3C1E52-6A4D-4B7A-9C21-4E0B6D5F72A1}

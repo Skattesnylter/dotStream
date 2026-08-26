@@ -17,10 +17,11 @@ namespace DotStream.Core;
 ///     14  11  08  05  02 | 17
 ///     15  12  09  06  03 | 18
 ///
-/// HYPOTHESIS - VERIFY ON HARDWARE: the key numbering comes from the ZCube gist and
-/// pyajazz; the placement of 16-18 in column 5 is inferred from product photos plus
-/// the "18-position 6x3 grid, 0x10-0x12 lack physical buttons" note in those sources.
-/// If it turns out wrong, this file is the only place that needs fixing.
+/// CONFIRMED ON HARDWARE, 04.08.2026. A numbered image was uploaded to each of the
+/// eighteen cells on a real AKP153E and read back off the device; every position
+/// matched, including the placement of 16-18 in column 5. This arrangement came from
+/// the ZCube gist and pyajazz and was carried as a hypothesis for months. It was
+/// right.
 /// </summary>
 public static class DeckLayout
 {
@@ -37,10 +38,20 @@ public static class DeckLayout
     public const int InfoColumn = 5;
 
     /// <summary>
-    /// Native LCD resolution of a single cell, in pixels. Documented as 85x85 for the
-    /// AKP153 family. VERIFY ON HARDWARE - the info cells may differ from the keys.
+    /// Native LCD resolution of a single cell, in pixels.
+    ///
+    /// MEASURED, 04.08.2026. Not 85, which the older protocol notes claimed, and not
+    /// 126, which AJAZZ's own AKP153 user guide recommends for custom icons. A test
+    /// pattern with a coloured band on each edge was resized live against the hardware
+    /// until all four bands were equally thick, which happens at exactly 100.
+    ///
+    /// The size matters more than it looks. A cell is a persistent framebuffer and an
+    /// upload only writes where the image reaches, so anything smaller leaves a ring of
+    /// whatever was there before - which is why the deck showed a stubborn pale border
+    /// and fragments of the vendor logo until this was corrected. Info cells 16-18
+    /// measure the same as the keys.
     /// </summary>
-    public const int CellPixels = 85;
+    public const int CellPixels = 100;
 
     public static bool IsKey(int protocolIndex) =>
         protocolIndex is >= FirstKey and <= LastKey;

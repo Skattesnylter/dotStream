@@ -164,6 +164,9 @@ public sealed class ActionCatalog
             Create = _ => new DeckButton
             {
                 Tag = "system.volume.up",
+                // Holding it keeps turning it up, which is the whole point of a volume
+                // key. Fifteen separate presses to cross the range is not a control.
+                RepeatWhileHeld = true,
                 Visual = () => Glyph(Glyphs.VolumeUp, SystemBackground, Colors.White, "Vol +"),
                 OnPress = () => { SystemVolume.Up(); return Task.CompletedTask; }
             }
@@ -178,6 +181,7 @@ public sealed class ActionCatalog
             Create = _ => new DeckButton
             {
                 Tag = "system.volume.down",
+                RepeatWhileHeld = true,
                 Visual = () => Glyph(Glyphs.VolumeDown, SystemBackground, Colors.White, "Vol -"),
                 OnPress = () => { SystemVolume.Down(); return Task.CompletedTask; }
             }
@@ -211,6 +215,38 @@ public sealed class ActionCatalog
                 Tag = "input.text",
                 Visual = () => Glyph(Glyphs.Comment, Color.FromRgb(0x0B, 0x14, 0x0E),
                     Color.FromRgb(0x8B, 0xE2, 0xA8), "Text")
+            }
+        },
+
+        new ActionDefinition
+        {
+            Id = "input.run",
+            Name = "Run a program",
+            Category = "Input",
+            Preview = Glyph(Glyphs.Play, Color.FromRgb(0x14, 0x0B, 0x18),
+                Color.FromRgb(0xC9, 0x8B, 0xE2), "Run"),
+            // Configured per key: the window asks what to run when dropped.
+            Create = _ => new DeckButton
+            {
+                Tag = "input.run",
+                Visual = () => Glyph(Glyphs.Play, Color.FromRgb(0x14, 0x0B, 0x18),
+                    Color.FromRgb(0xC9, 0x8B, 0xE2), "Run")
+            }
+        },
+
+        new ActionDefinition
+        {
+            Id = "input.link",
+            Name = "Open a link",
+            Category = "Input",
+            Preview = Glyph(Glyphs.Link, Color.FromRgb(0x0B, 0x11, 0x18),
+                Color.FromRgb(0x6F, 0xA8, 0xDC), "Link"),
+            // Configured per key: the window asks for the address when dropped.
+            Create = _ => new DeckButton
+            {
+                Tag = "input.link",
+                Visual = () => Glyph(Glyphs.Link, Color.FromRgb(0x0B, 0x11, 0x18),
+                    Color.FromRgb(0x6F, 0xA8, 0xDC), "Link")
             }
         },
 

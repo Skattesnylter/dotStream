@@ -39,6 +39,12 @@ public sealed class DeckController : IAsyncDisposable
     /// <summary>Raised when an upload throws. The worker keeps running.</summary>
     public event EventHandler<Exception>? UploadFailed;
 
+    public event EventHandler<DeckKeyEventArgs>? KeyReleased
+    {
+        add => _transport.KeyReleased += value;
+        remove => _transport.KeyReleased -= value;
+    }
+
     public event EventHandler<DeckKeyEventArgs>? KeyPressed
     {
         add => _transport.KeyPressed += value;

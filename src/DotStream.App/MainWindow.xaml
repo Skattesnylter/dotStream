@@ -34,6 +34,10 @@
                 <Separator />
                 <MenuItem x:Name="McpMenuItem" Header="_Agent bridge (MCP)..." Click="OnToggleMcp" />
                 <Separator />
+                <MenuItem x:Name="StartWithWindowsMenuItem" Header="Start with _Windows"
+                          IsCheckable="True" Click="OnToggleStartWithWindows"
+                          ToolTip="Runs dotStream in the tray when you sign in, so the deck is live without starting anything." />
+                <Separator />
                 <MenuItem Header="Reset deck _layout..." Click="OnResetLayout" />
                 <Separator />
                 <MenuItem Header="_Hide to tray" Click="OnHideToTray" InputGestureText="Alt+F4" />
@@ -41,6 +45,8 @@
             </MenuItem>
             <MenuItem Header="_View">
                 <MenuItem Header="_Icons..." Click="OnShowIcons" />
+                <MenuItem Header="_Calibrate cells..." Click="OnCalibrate"
+                          ToolTip="Set the cell size and rotation for your deck. Needed only if the pictures look cropped, offset, or leave a border behind." />
                 <MenuItem Header="_What's in front?..." Click="OnShowForeground"
                           ToolTip="What dotStream saw when you last switched away - and whether it recognised it." />
                 <MenuItem Header="_Console" Command="{x:Static local:DeckCommands.ShowConsole}"

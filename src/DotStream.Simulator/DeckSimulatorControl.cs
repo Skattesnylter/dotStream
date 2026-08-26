@@ -35,6 +35,7 @@ public sealed class DeckSimulatorControl : UserControl
     private Point _dragOrigin;
     private int _dragFrom = -1;
     private bool _dragging;
+    private int _pressed = -1;
 
     public DeckSimulatorControl()
     {
@@ -94,6 +95,15 @@ public sealed class DeckSimulatorControl : UserControl
 
     /// <summary>Raised with the protocol index when a key cell is clicked.</summary>
     public event EventHandler<int>? CellPressed;
+
+    /// <summary>
+    /// Raised when the mouse button comes back up on a key.
+    ///
+    /// The hardware reports both edges, so the simulator has to as well - otherwise a
+    /// long press works on the desk and does nothing on screen, and the two stop being
+    /// the same deck.
+    /// </summary>
+    public event EventHandler<int>? CellReleased;
 
     /// <summary>
     /// Right-click on a cell. An editor gesture only - the hardware has no such
@@ -240,7 +250,10 @@ public sealed class DeckSimulatorControl : UserControl
                 _dragFrom = index;
                 _dragOrigin = e.GetPosition(this);
                 _dragging = false;
+                _pressed = index;
+
                 AnimatePress(index);
+                CellPressed?.Invoke(this, index);
             };
 
             // Dragging a key moves it. The press therefore has to wait for the button
@@ -251,10 +264,13 @@ public sealed class DeckSimulatorControl : UserControl
                 e.Handled = true;
 
                 bool moved = _dragging;
+                bool wasHeld = _pressed == index;
+
                 _dragFrom = -1;
                 _dragging = false;
+                _pressed = -1;
 
-                if (!moved) CellPressed?.Invoke(this, index);
+                if (!moved && wasHeld) CellReleased?.Invoke(this, index);
             };
 
             cell.MouseMove += (_, e) =>

@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using DotStream.Core;
 
 namespace DotStream.App;
 
@@ -29,6 +30,24 @@ public sealed class AppSettings
     public bool McpEnabled { get; set; }
 
     public int McpPort { get; set; } = 8787;
+
+    /// <summary>
+    /// The size of one cell in device pixels.
+    ///
+    /// 100 is measured on the 0300:3010 AKP153E, and is a default rather than a fact:
+    /// several VID/PID pairs ship under this name and nobody has measured them all. A
+    /// cell is a persistent framebuffer, so a wrong value here does not fail cleanly -
+    /// too small leaves a ring of whatever was there before, too large crops. That is
+    /// what the calibration window is for.
+    /// </summary>
+    public int CellPixels { get; set; } = DeckLayout.CellPixels;
+
+    /// <summary>
+    /// Degrees the image is turned before upload. 270 on the measured device, with no
+    /// mirroring. A variant with its panel mounted the other way needs a different
+    /// quarter turn, which is why this is settable rather than a constant.
+    /// </summary>
+    public int CellRotation { get; set; } = 270;
 
     public static string FilePath => Path.Combine(AppSelectionStore.DirectoryPath, "settings.json");
 

@@ -134,10 +134,17 @@ public static class AppsFolder
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        Process.Start(new ProcessStartInfo("explorer.exe", app.LaunchUri)
-        {
-            UseShellExecute = true
-        });
+        // shell:AppsFolder is an Explorer namespace, so Explorer has to open it. A
+        // protocol handler such as steam:// is the opposite case: handing it to
+        // Explorer would work, but ShellExecute is what the protocol is for, and it
+        // reports a missing handler as an error instead of silently opening a window.
+        ProcessStartInfo start = app.LaunchUri.StartsWith("shell:", StringComparison.OrdinalIgnoreCase)
+            ? new ProcessStartInfo("explorer.exe", app.LaunchUri)
+            : new ProcessStartInfo(app.LaunchUri);
+
+        start.UseShellExecute = true;
+
+        Process.Start(start);
     }
 
     private static BitmapSource? TryGetIcon(IShellItem item, int size)

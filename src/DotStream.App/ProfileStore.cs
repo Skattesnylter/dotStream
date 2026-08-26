@@ -145,6 +145,16 @@ public static class ProfileStore
                         Kind = "text",
                         Value = JsonSerializer.Serialize(macro, Options)
                     },
+                    RunBinding run => new CellRecord
+                    {
+                        Kind = "run",
+                        Value = JsonSerializer.Serialize(run, Options)
+                    },
+                    LinkBinding link => new CellRecord
+                    {
+                        Kind = "link",
+                        Value = JsonSerializer.Serialize(link, Options)
+                    },
                     WidgetPlacement widget => new CellRecord
                     {
                         Kind = "widget",
