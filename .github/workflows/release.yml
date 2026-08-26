@@ -141,12 +141,39 @@ jobs:
           Signing is on the roadmap - see TODO.md.
           "@ | Set-Content notes.md -Encoding utf8
 
+      # Splatting rather than a parenthesised expression for the file list: @files
+      # passes each path as its own argument, which is what gh expects, while a
+      # sub-expression is at the mercy of how PowerShell decides to stringify it.
+      #
+      # The exit code is checked explicitly because the 1.0.0 run went red having
+      # done everything right - release created, all three assets uploaded and
+      # verifiably intact, URL printed, and no error anywhere in the log. A step
+      # that fails should say why; if this throws next time, the message names the
+      # code and the release URL check below says how far it actually got.
       - name: Publish release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $files = @(Get-ChildItem artifacts -File | ForEach-Object { $_.FullName })
+          Write-Host "Uploading $($files.Count) file(s): $($files -join ', ')"
+
           gh release create ${{ steps.version.outputs.tag }} `
             --title "dotStream ${{ steps.version.outputs.version }}" `
             --notes-file notes.md `
-            (Get-ChildItem artifacts -File | ForEach-Object { $_.FullName })
+            @files
+
+          $code = $LASTEXITCODE
+
+          # Ask GitHub rather than trusting the exit code, so a release that exists
+          # with everything on it is not reported as a failure.
+          gh release view ${{ steps.version.outputs.tag }} --json assets `
+            --jq '.assets[].name' | ForEach-Object { Write-Host "published: $_" }
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "gh release create exited $code and the release is not there."
+          }
+
+          if ($code -ne 0) {
+            Write-Host "::warning::gh release create exited $code, but the release and its assets are present."
+          }
