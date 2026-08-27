@@ -681,6 +681,24 @@ wrong twice over.
 - [ ] `mirajazz` (https://github.com/4ndv/mirajazz) covers the Mirabox and Ajazz
       family broadly and may already know something about it.
 
+**From the vendor manual**, which is nine numbered steps and nothing else:
+
+```
+181 x 113 x 36 mm, 545 g, 5V, wired, 1.5 m cable
+custom icons      126x126   jpg / png / gif
+custom background 1920x1080 jpg / png / gif / mp4
+knobs configurable for scene or page, order swappable
+RGB lighting set from the vendor application
+```
+
+The background resolution settles the architecture question: 1920x1080 across 32
+keys in 8x4 is 240x270 of panel per key, while the icon layer is 126x126. The icons
+are composited over a smaller area than each key occupies.
+
+Note 126x126 appearing again. The AKP153 manual claims the same figure and the real
+cells measured 100x100, so this is the source size their application scales from,
+not the panel resolution. Do not trust it for this device either; measure it.
+
 ## 12. Nice to have
 
 - [ ] AI-generated SVG glyphs — describe the button, get an icon in the house style.
