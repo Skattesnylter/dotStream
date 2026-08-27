@@ -657,10 +657,17 @@ video*, with per-key icons composited on top and GIF accepted for those. AKP153E
 eighteen independent framebuffers addressed one at a time with `BAT`. This is a
 canvas across the whole deck.
 
-So supporting it is not a matter of different numbers in the same protocol. Every
-assumption in `CellRenderer` - one cell, drawn alone, uploaded alone - would need a
-second path that renders the panel and then cuts it up. Do not estimate this from
-the layout constants; that was the first guess and it was wrong.
+**And it has two rotary knobs.** Left switches scenes, right pages up and down.
+`IDeckTransport` knows about `KeyPressed` and `KeyReleased` and nothing else; an
+encoder reports direction and speed, which is not a key press. Worse, the right knob
+means the *device* has a notion of pages in firmware, sitting next to `DeckNavigator`
+and disagreeing with it about who decides what is on screen.
+
+So supporting it is not a matter of different numbers in the same protocol. Three
+separate assumptions break: one cell drawn and uploaded alone in `CellRenderer`, keys
+as the only input in `IDeckTransport`, and paging as something the application owns.
+Do not estimate this from the layout constants; that was the first guess and it was
+wrong twice over.
 
 - [ ] **Make the layout data rather than constants.** Measured: 25 uses of
       `DeckLayout` across 9 files, and most go through `IsKey`, `AllCells`, `Keys`
