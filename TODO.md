@@ -555,12 +555,22 @@ Go Live, screen share and camera are **not** in the public documentation as far 
 know. Elgato's plugin has them, but Elgato is a partner — that may mean a private API or
 a scope ordinary applications are not given. Do not promise these.
 
-- [ ] **Settle the whitelist question.** The `rpc`, `rpc.voice.read` and
-      `rpc.voice.write` scopes are believed to require Discord to approve the
-      application, which is why almost no third-party tool does this. Not verified.
-      Register an application in the Developer Portal, handshake over the pipe, attempt
-      `AUTHORIZE` with `rpc.voice.write`, and see whether it is granted or refused. Ten
-      minutes, and the answer decides whether the route is worth anything.
+- [x] **The pipe talks to anyone.** Measured 27.08.2026. `NamedPipeClientStream` to
+      `discord-ipc-0`, frame is a 4-byte opcode and a 4-byte length little-endian
+      followed by JSON, exactly as documented. A handshake with a deliberately bogus
+      client id came back as opcode 2 with `{"code":4000,"message":"Invalid Client
+      ID"}`.
+
+      The refusal is the useful part. "Invalid Client ID" rather than "unauthorized
+      application" means an unregistered process is not turned away at the door, so
+      the whitelist question is now about scopes alone rather than about access.
+
+      Note that Python's `open()` cannot open a Windows named pipe and reports it as
+      missing, which reads exactly like Discord not running. Use the .NET class.
+- [ ] **Settle the whitelist question**, which is now the only thing in the way.
+      Register an application in the Developer Portal, handshake with its real id,
+      attempt `AUTHORIZE` with `rpc.voice.write`, and see whether it is granted or
+      refused. The answer decides whether the route is worth anything.
 - [ ] Meanwhile: a Discord page built on **global keybinds**. `Ctrl+Shift+M` and
       `Ctrl+Shift+D` are Discord's defaults but only fire when Discord has focus - which
       is precisely not when you want mute. Register a global keybind inside Discord
