@@ -619,6 +619,11 @@ a token.
       Three assumptions in this section were wrong and all three were measured away in
       under half an hour. Each error message pointed away from its own fix.
 
+**The application is registered.** Client ID `1542622058679373855`, public client,
+PKCE, one redirect URI pointing at the repository which is never navigated to. The id
+belongs in the source when this is built - a public client has no secret to protect,
+and every user sharing one application is the point rather than a compromise.
+
 - [ ] Build it: `GET_VOICE_SETTINGS` on connect, subscribe to `VOICE_SETTINGS_UPDATE`,
       and a mute key lit from what Discord reports rather than from what the key last
       did. Same shape as the OBS keys.
