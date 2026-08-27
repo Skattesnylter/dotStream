@@ -7,7 +7,10 @@ the AKP153E arrived on 04.08.2026 and everything they gated is measured.
 
 ## Releases
 
-Currently **1.0.0**.
+Currently **1.0.1**, which leaves the deck properly dark on exit. `LIG 0` is the
+lowest backlight step rather than off, and `HAN` removes what is left. Both halves
+were checked before it shipped: the panel goes dark, and `DIS` at connect wakes it
+on an ordinary restart.
 
 **1.0.0 shipped with:**
 
