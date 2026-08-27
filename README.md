@@ -5,6 +5,22 @@ software is not good.
 
 Not an Elgato-compatible plugin host. Deliberately.
 
+### If yours says something else on it
+
+The same hardware is a Mirabox HSV293S underneath, sold under a pile of names.
+If you own any of these, this is for you too:
+
+**AJAZZ AKP153E** · **Mirabox HSV293S** · **MBOX 293S** · **MRSVI 293S** ·
+**Basicolor HSV293S** · **Mars Gaming MSD-Pro** · **Soomfon CN003** ·
+**HALCONTORNO HSV293 Slim**
+
+Decks are found by their vendor HID usage page rather than by USB identifiers,
+precisely because those differ between batches and rebrands, so an unlisted
+variant has a good chance of just working. If the pictures come out cropped or
+offset, *View → Calibrate cells* fixes it without a rebuild. And if you have one
+that works, or one that does not, please open an issue and say which — that list
+is only as good as what people report.
+
 ## Status
 
 Running on real hardware. The HID transport is written and measured against an
@@ -95,7 +111,7 @@ application and a public release to qualify for.
 Every release includes `SHA256SUMS.txt`. Check your download against it:
 
 ```powershell
-Get-FileHash .\dotStream-1.0.0-win-x64-setup.exe -Algorithm SHA256
+Get-FileHash .\dotStream-<version>-win-x64-setup.exe -Algorithm SHA256
 ```
 
 Compare the result with the matching line in `SHA256SUMS.txt`. Builds are produced
