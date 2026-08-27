@@ -639,6 +639,30 @@ too, serving MCP on 8787.
 - [ ] Cell images are already JPEG. Pushing them over a WebSocket and posting an index
       back is most of the work.
 
+## 11b. Other decks in the family
+
+Not now. Triggered by somebody turning up with one, not by buying hardware on
+spec - at which point they can be asked for measurements instead.
+
+**AJAZZ AKP032** - 32 LCD keys, 8x4, RGB lighting, wired. From the product photo it
+has **no side screen**, so every cell is a key and the info-cell concept has nowhere
+to live on it. RGB backlighting is a whole class of command we have never seen.
+
+Nobody has published its protocol. AKP153 and AKP03 both have reverse-engineered
+OpenDeck plugins; this one has none, so it would be measured from scratch.
+
+- [ ] **Make the layout data rather than constants.** Measured: 25 uses of
+      `DeckLayout` across 9 files, and most go through `IsKey`, `AllCells`, `Keys`
+      and `InfoCells` rather than the raw numbers. Half a day, and worth nothing on
+      its own without a device to point it at.
+- [ ] **Refuse politely instead of half-drawing.** `FindDeck` opens anything on
+      vendor usage page `0xFFA0` and then assumes eighteen cells. Plug in a 32-key
+      deck today and it paints eighteen of them and leaves fourteen dark with no
+      explanation. Saying "this is not a deck I know how to draw on" is better than
+      showing half of one.
+- [ ] `mirajazz` (https://github.com/4ndv/mirajazz) covers the Mirabox and Ajazz
+      family broadly and may already know something about it.
+
 ## 12. Nice to have
 
 - [ ] AI-generated SVG glyphs — describe the button, get an icon in the house style.
