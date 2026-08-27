@@ -1,4 +1,4 @@
-namespace DotStream.Core;
+﻿namespace DotStream.Core;
 
 public sealed class DeckKeyEventArgs : EventArgs
 {
@@ -56,4 +56,13 @@ public interface IDeckTransport : IAsyncDisposable
     Task ClearCellAsync(int protocolIndex, CancellationToken ct = default);
 
     Task ClearAllAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Asks the device to sleep, if it knows how.
+    ///
+    /// Default is to do nothing, because most of this interface describes drawing and
+    /// a window has no panel to switch off. Implemented only where there is hardware
+    /// with a backlight, and never required: a caller may assume it is a courtesy.
+    /// </summary>
+    Task SleepAsync(CancellationToken ct = default) => Task.CompletedTask;
 }

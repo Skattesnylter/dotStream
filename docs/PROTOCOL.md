@@ -1,8 +1,12 @@
 # AJAZZ AKP153E — wire protocol
 
-Distilled from the open-source reverse-engineering work listed at the bottom.
-Nothing here has been verified against hardware yet — the device is in the post.
-Everything marked **VERIFY** is a hypothesis.
+Started as a distillation of the open-source reverse-engineering work listed at the
+bottom, and has since been measured against a real AKP153E (`0300:3010`) from
+04.08.2026 onwards.
+
+Anything dated is measured. Anything marked **VERIFY** is still a hypothesis taken
+from the sources, and two of those turned out to be wrong for this variant, so treat
+undated claims accordingly.
 
 ---
 
@@ -67,7 +71,7 @@ Frames not starting with `CRT` are silently dropped by the firmware.
 | `STP` | `53 54 50` | Flush / commit |
 | `CLE` | `43 4C 45` | Clear — see tag table |
 | `LOG` | `4C 4F 47` | Boot logo (shown during power-up, **not** the info cells) |
-| `HAN` | `48 41 4E` | Sleep |
+| `HAN` | `48 41 4E` | Sleep — **measured 27.08.2026**, see below |
 | `CONNECT` | ASCII | Keep-alive |
 
 ### CLE tags
@@ -113,6 +117,15 @@ photos; both were right.
   smaller image than the last one and a ring of the old one stays visible; this is
   what shows up as a stubborn light border and as leftovers of the vendor logo.
   Either always write a full-panel image, or `CLE` the cell first.
+- **`HAN` puts the panel to sleep, and it is the only way to make the deck properly
+  dark.** `LIG 0` is the lowest backlight step rather than off: eighteen cleared cells
+  still glow enough to be noticeable in an unlit room. `HAN` after `LIG 0` removes the
+  last of it. No `STP` is needed, unlike `CLE`.
+
+  Waking is free. `DIS` at the start of `ConnectAsync` brings the panel back on its
+  own, so an ordinary restart is enough and nobody has to reach for the cable. This
+  was the risk worth checking before shipping it, since an exit that cannot be undone
+  without unplugging would be worse than a faint glow.
 - **Cell size and rotation are user settings**, not constants — `CellPixels` and
   `CellRotation` in `settings.json`, with *View → Calibrate cells…* to set them
   against the deck itself. The values below are this variant's, and the defaults.

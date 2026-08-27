@@ -1,4 +1,4 @@
-using DotStream.Core;
+﻿using DotStream.Core;
 
 namespace DotStream.Simulator;
 
@@ -123,6 +123,10 @@ public sealed class MirroringTransport : IDeckTransport
         await _screen.ClearAllAsync(ct);
         await ToDeviceAsync(d => d.ClearAllAsync(ct));
     }
+
+    /// <summary>Hardware only. There is no panel behind the on-screen deck.</summary>
+    public Task SleepAsync(CancellationToken ct = default) =>
+        ToDeviceAsync(d => d.SleepAsync(ct));
 
     /// <summary>
     /// Sends to the hardware if there is any, and swallows the failure if it vanished

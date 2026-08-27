@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -291,8 +291,25 @@ public partial class MainWindow : Window, IDeckAgent
         // the process was gone before CLE ever left the machine.
         if (_transport is not null)
         {
-            try { await _transport.ClearAllAsync(); }
-            catch (Exception ex) { DeckLog.Note("shutdown", "could not clear the deck: " + ex.Message); }
+            try
+            {
+                await _transport.ClearAllAsync();
+
+                // Black pixels are not a dark deck. The panel keeps its backlight on,
+                // so eighteen cleared cells still glow enough to be the brightest thing
+                // in a dark room - which was reason enough to reach behind the machine
+                // and pull the cable. LIG 0 is what actually turns it off.
+                //
+                // Nothing has to put it back: startup and reconnect both set the saved
+                // brightness after connecting.
+                await _transport.SetBrightnessAsync(0);
+
+                // Then ask it to sleep. LIG 0 turns out to be the lowest backlight
+                // step rather than off, so a little still leaks through the panel.
+                // Whether HAN does better is the open question this is here to answer.
+                await _transport.SleepAsync();
+            }
+            catch (Exception ex) { DeckLog.Note("shutdown", "could not darken the deck: " + ex.Message); }
         }
 
         Close();

@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Media;
@@ -172,6 +172,24 @@ public sealed class HidTransport : IDeckTransport
             Send("STP");
         }
         finally { _writeLock.Release(); }
+    }
+
+    /// <summary>
+    /// Sends HAN, which the protocol notes list as Sleep.
+    ///
+    /// UNVERIFIED. That line came from the sources the notes were built on, not from
+    /// this hardware, and the last two constants taken on trust the same way were both
+    /// wrong. It is sent on shutdown only, where the worst case is a deck that needs
+    /// unplugging - and ConnectAsync opens with DIS, which is display init and the most
+    /// likely thing to wake a sleeping panel.
+    ///
+    /// No STP after it. CLE needed one, LIG did not, so committing is per-command
+    /// rather than universal and guessing again would be repeating the mistake.
+    /// </summary>
+    public Task SleepAsync(CancellationToken ct = default)
+    {
+        Send("HAN");
+        return Task.CompletedTask;
     }
 
     /// <summary>Puts the vendor's own logo back, which is the only way to undo a clear.</summary>
