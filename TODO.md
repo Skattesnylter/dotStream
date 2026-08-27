@@ -651,10 +651,21 @@ to live on it. RGB backlighting is a whole class of command we have never seen.
 Nobody has published its protocol. AKP153 and AKP03 both have reverse-engineered
 OpenDeck plugins; this one has none, so it would be measured from scratch.
 
+**It is not the same drawing model, which is the part that matters.** AJAZZ markets
+it as "dual-layer": one background spanning the whole panel, *including mp4 and avi
+video*, with per-key icons composited on top and GIF accepted for those. AKP153E is
+eighteen independent framebuffers addressed one at a time with `BAT`. This is a
+canvas across the whole deck.
+
+So supporting it is not a matter of different numbers in the same protocol. Every
+assumption in `CellRenderer` - one cell, drawn alone, uploaded alone - would need a
+second path that renders the panel and then cuts it up. Do not estimate this from
+the layout constants; that was the first guess and it was wrong.
+
 - [ ] **Make the layout data rather than constants.** Measured: 25 uses of
       `DeckLayout` across 9 files, and most go through `IsKey`, `AllCells`, `Keys`
-      and `InfoCells` rather than the raw numbers. Half a day, and worth nothing on
-      its own without a device to point it at.
+      and `InfoCells` rather than the raw numbers. Half a day. Necessary but nowhere
+      near sufficient, and worth nothing without a device to measure against.
 - [ ] **Refuse politely instead of half-drawing.** `FindDeck` opens anything on
       vendor usage page `0xFFA0` and then assumes eighteen cells. Plug in a 32-key
       deck today and it paints eighteen of them and leaves fourteen dark with no
