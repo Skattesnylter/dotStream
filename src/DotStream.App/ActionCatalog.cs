@@ -236,6 +236,22 @@ public sealed class ActionCatalog
 
         new ActionDefinition
         {
+            Id = "discord.control",
+            Name = "Discord",
+            Category = "Input",
+            Preview = Glyph(Glyphs.Link, Color.FromRgb(0x16, 0x18, 0x24),
+                Color.FromRgb(0x8E, 0x9B, 0xF0), "Discord"),
+            // Configured per key: the window asks which action when dropped.
+            Create = _ => new DeckButton
+            {
+                Tag = "discord.control",
+                Visual = () => Glyph(Glyphs.Link, Color.FromRgb(0x16, 0x18, 0x24),
+                    Color.FromRgb(0x8E, 0x9B, 0xF0), "Discord")
+            }
+        },
+
+        new ActionDefinition
+        {
             Id = "obs.control",
             Name = "OBS Studio",
             Category = "Input",

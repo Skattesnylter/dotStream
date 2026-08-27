@@ -257,6 +257,14 @@ public sealed class McpServer : IAsyncDisposable
                 string? label = entry?["label"]?.GetValue<string>();
                 string? hotkey = entry?["hotkey"]?.GetValue<string>();
 
+                ProposedDiscord? discord = null;
+
+                if (entry?["discord"] is JsonObject d &&
+                    d["action"]?.GetValue<string>() is { Length: > 0 } discordAction)
+                {
+                    discord = new ProposedDiscord(discordAction.Trim());
+                }
+
                 ProposedObs? obs = null;
 
                 if (entry?["obs"] is JsonObject o &&
@@ -268,14 +276,14 @@ public sealed class McpServer : IAsyncDisposable
                 // A key needs a label and something to do. Which of the two it is does
                 // not matter here.
                 if (string.IsNullOrWhiteSpace(label)) continue;
-                if (string.IsNullOrWhiteSpace(hotkey) && obs is null) continue;
+                if (string.IsNullOrWhiteSpace(hotkey) && obs is null && discord is null) continue;
 
                 int? index = entry?["index"] is { } slot && slot.GetValue<int>() is >= 1 and <= 15
                     ? slot.GetValue<int>()
                     : null;
 
                 keys.Add(new ProposedKey(label.Trim(), hotkey?.Trim() ?? "",
-                    entry?["icon"]?.GetValue<string>()?.Trim() ?? "", index, obs));
+                    entry?["icon"]?.GetValue<string>()?.Trim() ?? "", index, obs, discord));
             }
         }
 
@@ -452,6 +460,21 @@ public sealed class McpServer : IAsyncDisposable
                                         ["target"] = Property("string",
                                             "Scene name for SwitchScene, audio source name for "
                                             + "ToggleMute. Not used by the others.")
+                                    },
+                                    ["required"] = new JsonArray { "action" }
+                                },
+                                ["discord"] = new JsonObject
+                                {
+                                    ["type"] = "object",
+                                    ["description"] =
+                                        "Instead of a hotkey, drive Discord directly. Only works while "
+                                        + "Discord is running. These keys light up when the microphone "
+                                        + "is actually muted, including when the user muted themselves "
+                                        + "inside Discord.",
+                                    ["properties"] = new JsonObject
+                                    {
+                                        ["action"] = Property("string",
+                                            "ToggleMute, ToggleDeafen or LeaveVoice.")
                                     },
                                     ["required"] = new JsonArray { "action" }
                                 }

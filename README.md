@@ -90,6 +90,7 @@ working somewhere else.
 | ✅ | Cell calibration for variants nobody has measured |
 | ✅ | Start with Windows, into the tray |
 | ✅ | OBS Studio — scenes, recording, streaming and mute, with keys that light up |
+| ✅ | Discord — mute, deafen and leave, lit from Discord's own state |
 | ⬜ | Generic MCP client action — a key that calls someone else's tool |
 | ⬜ | Folders and a page-switch key |
 
@@ -183,6 +184,7 @@ not move while you are using it.
 | **Link** | A URL or a file. `steam://rungameid/892970` starts Valheim |
 | **Media** | Play/pause, next, previous, volume, mute — with live state and album art |
 | **OBS Studio** | Switch scene, start recording or streaming, mute a source |
+| **Discord** | Mute, deafen, leave the voice channel |
 | **Widget** | CPU, RAM or clock, on the three cells in column five |
 
 Volume keys repeat while held. Every key reports press and release separately,
@@ -210,6 +212,24 @@ seconds while the key is in view.
 And an assistant can build the whole page for you. It asks OBS for your scenes and
 audio sources, proposes the keys, and you accept or reject on the deck without typing
 a single scene name.
+
+### Discord
+
+Nothing to switch on. If Discord is running, dotStream connects to it, and the first
+time it does Discord asks you to approve dotStream once. After that it is silent.
+
+**The keys are lit from Discord, not from themselves.** Mute yourself by clicking in
+Discord and the key follows. That is the whole reason this does not use the keyboard
+shortcuts, which fire and hope: a mute key that is wrong about whether your microphone
+is live is the one mistake this kind of software can make that you cannot undo
+afterwards.
+
+Deafen turns off the microphone as well, because that is what Discord does. Both keys
+light up together.
+
+The authorisation is stored in `%APPDATA%\dotStream\discord.dat`, encrypted for your
+Windows account. It is the only credential dotStream keeps, and the only file here
+that is not plain readable JSON.
 
 ### Which applications are listed
 

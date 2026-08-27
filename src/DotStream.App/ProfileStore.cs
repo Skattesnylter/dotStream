@@ -160,6 +160,11 @@ public static class ProfileStore
                         Kind = "obs",
                         Value = JsonSerializer.Serialize(obs, Options)
                     },
+                    DiscordBinding discord => new CellRecord
+                    {
+                        Kind = "discord",
+                        Value = JsonSerializer.Serialize(discord, Options)
+                    },
                     WidgetPlacement widget => new CellRecord
                     {
                         Kind = "widget",

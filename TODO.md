@@ -7,7 +7,20 @@ the AKP153E arrived on 04.08.2026 and everything they gated is measured.
 
 ## Releases
 
-Currently **1.1.0**, which adds OBS Studio and shows why the deck is holding still.
+Currently **1.2.0**, which adds Discord.
+
+**1.2.0:**
+
+- [x] **Discord over the RPC pipe**, with mute, deafen and leave. Keys lit from
+      `VOICE_SETTINGS_UPDATE` rather than from what the key last did, so muting inside
+      Discord moves the key.
+- [x] PKCE with a public client, so no secret ships in the binary. The token is kept
+      in `discord.dat` through DPAPI, the first real credential in this project.
+- [x] `deck_propose_page` can propose Discord keys as well as OBS ones.
+
+---
+
+**1.1.0** added OBS Studio and made the pin visible.
 
 **1.1.0:**
 

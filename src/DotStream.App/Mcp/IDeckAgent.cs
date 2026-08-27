@@ -25,10 +25,14 @@ public sealed record ProposedKey(
     string Hotkey,
     string Icon = "",
     int? Index = null,
-    ProposedObs? Obs = null);
+    ProposedObs? Obs = null,
+    ProposedDiscord? Discord = null);
 
 /// <summary>An OBS action on a proposed key. Target is the scene or audio source.</summary>
 public sealed record ProposedObs(string Action, string Target = "");
+
+/// <summary>A Discord action on a proposed key. None of them take a target.</summary>
+public sealed record ProposedDiscord(string Action);
 
 public sealed record DeckStatus(
     string Transport,

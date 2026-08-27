@@ -106,6 +106,12 @@ public partial class MainWindow : Window, IDeckAgent
     private readonly AgentState _agent = new();
     private readonly McpClient _mcpClient = new();
     private readonly ObsClient _obs = new();
+    private readonly DiscordClient _discord = new();
+
+    // What Discord says about the microphone, so keys are lit from fact rather than
+    // from what the key last did.
+    private bool _discordMuted;
+    private bool _discordDeafened;
 
     // What OBS says is happening, so keys can be lit without asking on every repaint.
     private string? _obsScene;
@@ -255,8 +261,9 @@ public partial class MainWindow : Window, IDeckAgent
 
         // Last, not first: started at login the deck should come up painted, and hiding
         // before the apps are loaded would leave it blank for as long as that takes.
-        // OBS is optional and usually not running, so this is last and quiet.
+        // Both optional and usually not running, so these are last and quiet.
         await ConnectObsAsync();
+        await ConnectDiscordAsync();
         if (App.StartHidden) HideToTray();
     }
 
@@ -339,6 +346,7 @@ public partial class MainWindow : Window, IDeckAgent
 
         if (_mcp is not null) await _mcp.DisposeAsync();
         await _obs.DisposeAsync();
+        await _discord.DisposeAsync();
         _mcpClient.Dispose();
         _watcher?.Dispose();
         _tray?.Dispose();
@@ -450,7 +458,8 @@ public partial class MainWindow : Window, IDeckAgent
             // full of those is how software stops being trusted.
             bool belongs = action.Category == "Navigation"
                            || (media && action.Category == "Media")
-                           || (action.Id == "obs.control" && _obs.IsConnected);
+                           || (action.Id == "obs.control" && _obs.IsConnected)
+                           || (action.Id == "discord.control" && _discord.IsConnected);
 
             if (!belongs) continue;
 
@@ -755,6 +764,8 @@ public partial class MainWindow : Window, IDeckAgent
                             BuildLinkButton(link),
                         "obs" when JsonSerializer.Deserialize<ObsBinding>(cell.Value) is { } obs =>
                             BuildObsButton(obs),
+                        "discord" when JsonSerializer.Deserialize<DiscordBinding>(cell.Value) is { } discord =>
+                            BuildDiscordButton(discord),
                         _ => null
                     };
 
@@ -1378,10 +1389,11 @@ public partial class MainWindow : Window, IDeckAgent
             "input.run" => CreateRunButton(existing: null),
             "input.link" => CreateLinkButton(existing: null),
             "obs.control" => CreateObsButton(existing: null),
+            "discord.control" => CreateDiscordButton(existing: null),
             _ => null
         };
 
-        if (action.Id is "mcp.call" or "input.hotkey" or "input.text" or "input.run" or "input.link" or "obs.control")
+        if (action.Id is "mcp.call" or "input.hotkey" or "input.text" or "input.run" or "input.link" or "obs.control" or "discord.control")
         {
             if (configured is not null) Assign(protocolIndex, configured, action.Name);
             return;
@@ -1605,6 +1617,150 @@ public partial class MainWindow : Window, IDeckAgent
         _ => false
     };
 
+    // ------------------------------------------------------------------ Discord
+
+    /// <summary>
+    /// Connects to Discord if it is running.
+    ///
+    /// Quiet about failure, like OBS. Not running is the ordinary case and not worth a
+    /// dialog. The first successful connection may put an authorisation prompt in the
+    /// Discord window, which is Discord asking rather than us, and only ever once.
+    /// </summary>
+    private async Task ConnectDiscordAsync()
+    {
+        if (_discord.IsConnected) return;
+
+        try
+        {
+            await _discord.ConnectAsync();
+
+            _discord.Event += OnDiscordEvent;
+            _discord.Closed += (_, _) => Dispatcher.Invoke(() =>
+            {
+                DeckLog.Note("discord", "connection closed");
+
+                RepaintKeys(highPriority: false);
+                ShowActionsFor(_navigator.Current);
+            });
+
+            await _discord.SubscribeAsync("VOICE_SETTINGS_UPDATE");
+            await RefreshDiscordStateAsync();
+
+            DeckLog.Out("discord", "connected");
+
+            RepaintKeys(highPriority: false);
+            ShowActionsFor(_navigator.Current);
+        }
+        catch (Exception ex)
+        {
+            DeckLog.Note("discord", "could not connect: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Reads the current voice state, so keys are lit before anything changes.
+    ///
+    /// Events only report transitions, so without this a mute key stays dark until you
+    /// toggle it once, which looks exactly like the lighting being broken.
+    /// </summary>
+    private async Task RefreshDiscordStateAsync()
+    {
+        try
+        {
+            if (await _discord.CallAsync("GET_VOICE_SETTINGS") is { } voice)
+            {
+                _discordMuted = voice["mute"]?.GetValue<bool>() ?? false;
+                _discordDeafened = voice["deaf"]?.GetValue<bool>() ?? false;
+            }
+        }
+        catch (Exception ex)
+        {
+            DeckLog.Note("discord", "state read failed: " + ex.Message);
+        }
+    }
+
+    private void OnDiscordEvent(object? sender, DiscordEventArgs e) => Dispatcher.Invoke(() =>
+    {
+        if (e.Name != "VOICE_SETTINGS_UPDATE") return;
+
+        _discordMuted = e.Data?["mute"]?.GetValue<bool>() ?? _discordMuted;
+        _discordDeafened = e.Data?["deaf"]?.GetValue<bool>() ?? _discordDeafened;
+
+        RepaintKeys(highPriority: true);
+    });
+
+    private bool IsDiscordActive(DiscordBinding discord) => discord.Action switch
+    {
+        DiscordAction.ToggleMute => _discordMuted,
+        DiscordAction.ToggleDeafen => _discordDeafened,
+        _ => false
+    };
+
+    private DeckButton? CreateDiscordButton(DiscordBinding? existing)
+    {
+        var dialog = new DiscordWindow(existing) { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Result is null) return null;
+
+        return BuildDiscordButton(dialog.Result);
+    }
+
+    private DeckButton BuildDiscordButton(DiscordBinding discord) => new()
+    {
+        Tag = discord,
+        Visual = () =>
+        {
+            bool active = _discord.IsConnected && IsDiscordActive(discord);
+
+            // Muted is the state worth seeing across a room, so it is the loud one.
+            var visual = new CellVisual
+            {
+                Background = active ? Color.FromRgb(0x3A, 0x14, 0x18) : Color.FromRgb(0x16, 0x18, 0x24),
+                BackgroundGradientTo = active ? Color.FromRgb(0x20, 0x0B, 0x0E) : Color.FromRgb(0x0B, 0x0C, 0x12),
+                Label = discord.DisplayLabel,
+                LabelColor = _discord.IsConnected ? Colors.White : Color.FromRgb(0x80, 0x80, 0x8A),
+                LabelSize = _textLab.LabelSize,
+                LabelPosition = LabelPosition.Bottom,
+                ReservedLabelLines = 1
+            };
+
+            if (discord.FileImage is { } image)
+                return visual with { Icon = image, IconScale = 0.68 };
+
+            Color tint = !_discord.IsConnected ? Color.FromRgb(0x50, 0x52, 0x60)
+                       : active ? Color.FromRgb(0xFF, 0x6B, 0x7A)
+                       : Color.FromRgb(0x8E, 0x9B, 0xF0);
+
+            return discord.ResolvedIcon is { } icon ? icon.ApplyTo(visual, tint) : visual;
+        },
+        OnPress = async () =>
+        {
+            if (!_discord.IsConnected)
+            {
+                await ConnectDiscordAsync();
+
+                if (!_discord.IsConnected)
+                {
+                    StatusLabel.Text = "Discord is not answering. Start it and press again.";
+                    return;
+                }
+            }
+
+            (string command, JsonObject? args) = discord.Request(_discordMuted, _discordDeafened);
+
+            try
+            {
+                await _discord.CallAsync(command, args);
+                DeckLog.Out("discord", command + (args is null ? "" : "  " + args.ToJsonString()));
+                StatusLabel.Text = discord.Describe();
+            }
+            catch (Exception ex)
+            {
+                DeckLog.Note("discord", command + " failed: " + ex.Message);
+                StatusLabel.Text = "Discord did not accept that: " + ex.Message;
+            }
+        }
+    };
+
     /// <summary>
     /// Turns whatever an agent proposed into a key.
     ///
@@ -1615,6 +1771,7 @@ public partial class MainWindow : Window, IDeckAgent
     private DeckButton BuildProposedButton(object binding) => binding switch
     {
         ObsBinding obs => BuildObsButton(obs),
+        DiscordBinding discord => BuildDiscordButton(discord),
         HotkeyBinding hotkey => BuildHotkeyButton(hotkey),
         _ => throw new ArgumentOutOfRangeException(nameof(binding), binding, "Not a proposable binding.")
     };
@@ -2175,7 +2332,11 @@ public partial class MainWindow : Window, IDeckAgent
         {
             object? binding = null;
 
-            if (key.Obs is { } obs && Enum.TryParse(obs.Action, ignoreCase: true, out ObsAction action))
+            if (key.Discord is { } dc && Enum.TryParse(dc.Action, ignoreCase: true, out DiscordAction discordAction))
+            {
+                binding = new DiscordBinding(discordAction, key.Label, key.Icon);
+            }
+            else if (key.Obs is { } obs && Enum.TryParse(obs.Action, ignoreCase: true, out ObsAction action))
             {
                 binding = new ObsBinding(action, obs.Target, key.Label, key.Icon);
             }
