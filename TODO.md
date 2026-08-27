@@ -551,9 +551,15 @@ What the public RPC surface offers, if the scopes are granted:
 The events are the real prize: a mute key that is lit when actually muted, or a cell
 showing who is speaking. No hotkey can do either.
 
-Go Live, screen share and camera are **not** in the public documentation as far as we
-know. Elgato's plugin has them, but Elgato is a partner — that may mean a private API or
-a scope ordinary applications are not given. Do not promise these.
+**Camera and screen share are not partner-only either.** Measured 27.08.2026, and
+this too was wrong. The Developer Portal lists `rpc.video.read`, `rpc.video.write`,
+`rpc.screenshare.read`, `rpc.screenshare.write`, `rpc.notifications.read` and
+`rpc.activities.write` as ordinary scopes anyone can tick, and `AUTHORIZE` returned a
+code for all of them together with the voice ones.
+
+So dotStream can in principle reach everything Elgato's plugin does. Be precise about
+what that proves: the door opens. The commands behind it are untested until there is
+a token.
 
 - [x] **The pipe talks to anyone.** Measured 27.08.2026. `NamedPipeClientStream` to
       `discord-ipc-0`, frame is a 4-byte opcode and a 4-byte length little-endian
