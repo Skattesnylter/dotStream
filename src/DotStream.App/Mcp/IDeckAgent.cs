@@ -1,4 +1,4 @@
-using System.Windows.Media;
+﻿using System.Windows.Media;
 
 namespace DotStream.App.Mcp;
 
@@ -12,7 +12,23 @@ public sealed record AskResult(bool Answered, int Index, string? Choice, string 
 /// which is what you want when proposing a whole page and not what you want when
 /// adding a single key to a page someone has already arranged.
 /// </summary>
-public sealed record ProposedKey(string Label, string Hotkey, string Icon = "", int? Index = null);
+/// <summary>
+/// One key an agent is offering to place.
+///
+/// Hotkey or Obs, not both. Hotkeys work everywhere and stay the default; an OBS key
+/// is offered when the agent knows OBS is running and what is in it, which is the
+/// case worth having, since typing scene names by hand is how a proposal goes stale
+/// the moment somebody renames one.
+/// </summary>
+public sealed record ProposedKey(
+    string Label,
+    string Hotkey,
+    string Icon = "",
+    int? Index = null,
+    ProposedObs? Obs = null);
+
+/// <summary>An OBS action on a proposed key. Target is the scene or audio source.</summary>
+public sealed record ProposedObs(string Action, string Target = "");
 
 public sealed record DeckStatus(
     string Transport,

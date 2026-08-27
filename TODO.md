@@ -7,7 +7,31 @@ the AKP153E arrived on 04.08.2026 and everything they gated is measured.
 
 ## Releases
 
-Currently **1.0.1**, which leaves the deck properly dark on exit. `LIG 0` is the
+Currently **1.1.0**, which adds OBS Studio and shows why the deck is holding still.
+
+**1.1.0:**
+
+- [x] **OBS Studio over `obs-websocket`.** Scenes, recording, streaming and per-source
+      mute, with keys lit from the events OBS sends rather than from what the key last
+      did. Measured against obs-websocket 5.7.4 on OBS 32.2.2.
+- [x] **Scene keys show the scene.** `GetSourceScreenshot` returns a JPEG at whatever
+      size is asked for, and 100x100 is exactly a cell. Measured at 5 ms and 823 bytes
+      for an empty scene, 3.6 kB with a window in it. Fetched every three seconds and
+      only for scene keys on the page in view.
+- [x] **`deck_propose_page` can propose OBS keys.** It could only ever make hotkeys,
+      which meant the one integration where an agent knows more than the user - it can
+      ask OBS for the scene list - was the one it could not express.
+- [x] **The pin is visible.** Manual navigation holds the deck, and standing still is
+      indistinguishable from being broken: it fooled the author twice in one evening.
+      There is now a badge with a countdown, clicking it releases the hold, and
+      *View > Hold the deck after navigating* sets the duration.
+
+Still open for 1.1.0: folders and the page-switch key. A page created by a proposal
+without a target is currently unreachable once you navigate away from it.
+
+---
+
+**1.0.1** left the deck properly dark on exit. `LIG 0` is the
 lowest backlight step rather than off, and `HAN` removes what is left. Both halves
 were checked before it shipped: the panel goes dark, and `DIS` at connect wakes it
 on an ordinary restart.

@@ -1,0 +1,46 @@
+﻿<Window x:Class="DotStream.App.ObsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="OBS key"
+        Height="500" Width="440"
+        Background="{StaticResource Surface}"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner">
+
+    <StackPanel Margin="22,18,22,18">
+
+        <TextBlock Text="OBS key" FontSize="16" FontWeight="SemiBold" />
+        <TextBlock x:Name="StateLabel" Margin="0,3,0,16" Foreground="{StaticResource TextMuted}"
+                   TextWrapping="Wrap" Text="Looking for OBS..." />
+
+        <TextBlock Text="What should the key do?" Margin="0,0,0,4" />
+        <ComboBox x:Name="ActionBox" SelectionChanged="OnActionChanged" Margin="0,0,0,14">
+            <ComboBoxItem Content="Switch to a scene" Tag="SwitchScene" IsSelected="True" />
+            <ComboBoxItem Content="Start or stop recording" Tag="ToggleRecord" />
+            <ComboBoxItem Content="Start or stop streaming" Tag="ToggleStream" />
+            <ComboBoxItem Content="Mute or unmute a source" Tag="ToggleMute" />
+        </ComboBox>
+
+        <StackPanel x:Name="TargetPanel">
+            <TextBlock x:Name="TargetLabel" Text="Which scene?" Margin="0,0,0,4" />
+            <ComboBox x:Name="TargetBox" Margin="0,0,0,14" SelectionChanged="OnTargetChanged" />
+        </StackPanel>
+
+        <TextBlock Text="Label on the key" Margin="0,0,0,4" />
+        <TextBox x:Name="LabelBox" Background="#FF0E0E11" Foreground="{StaticResource TextPrimary}"
+                 CaretBrush="{StaticResource Accent}" BorderBrush="#FF33333A"
+                 Padding="6,5" Margin="0,0,0,14" />
+
+        <Border Background="#FF0E0E11" CornerRadius="6" Padding="12">
+            <TextBlock x:Name="Preview" FontFamily="Consolas" FontSize="12"
+                       TextWrapping="Wrap" Foreground="#FF9CDCFE" />
+        </Border>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button Content="Cancel" Padding="12,5" IsCancel="True" />
+            <Button x:Name="SaveButton" Content="Save" Padding="16,5" Margin="8,0,0,0"
+                    IsDefault="True" Click="OnSave" />
+        </StackPanel>
+
+    </StackPanel>
+</Window>

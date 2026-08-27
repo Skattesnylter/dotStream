@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -257,14 +257,25 @@ public sealed class McpServer : IAsyncDisposable
                 string? label = entry?["label"]?.GetValue<string>();
                 string? hotkey = entry?["hotkey"]?.GetValue<string>();
 
-                if (string.IsNullOrWhiteSpace(label) || string.IsNullOrWhiteSpace(hotkey)) continue;
+                ProposedObs? obs = null;
+
+                if (entry?["obs"] is JsonObject o &&
+                    o["action"]?.GetValue<string>() is { Length: > 0 } action)
+                {
+                    obs = new ProposedObs(action.Trim(), o["target"]?.GetValue<string>()?.Trim() ?? "");
+                }
+
+                // A key needs a label and something to do. Which of the two it is does
+                // not matter here.
+                if (string.IsNullOrWhiteSpace(label)) continue;
+                if (string.IsNullOrWhiteSpace(hotkey) && obs is null) continue;
 
                 int? index = entry?["index"] is { } slot && slot.GetValue<int>() is >= 1 and <= 15
                     ? slot.GetValue<int>()
                     : null;
 
-                keys.Add(new ProposedKey(label.Trim(), hotkey.Trim(),
-                    entry?["icon"]?.GetValue<string>()?.Trim() ?? "", index));
+                keys.Add(new ProposedKey(label.Trim(), hotkey?.Trim() ?? "",
+                    entry?["icon"]?.GetValue<string>()?.Trim() ?? "", index, obs));
             }
         }
 
@@ -425,9 +436,27 @@ public sealed class McpServer : IAsyncDisposable
                                         DotStream.Rendering.IconLibrary.All.Select(i => i.Name))
                                     + ". Left out, one is guessed from the label."),
                                 ["index"] = Property("number",
-                                    "Optional physical key, 1-15. Left out, the next free one is used.")
+                                    "Optional physical key, 1-15. Left out, the next free one is used."),
+                                ["obs"] = new JsonObject
+                                {
+                                    ["type"] = "object",
+                                    ["description"] =
+                                        "Instead of a hotkey, drive OBS Studio directly. Only works "
+                                        + "while OBS is running with its websocket server on - check "
+                                        + "deck_status first. Unlike a hotkey, these keys light up "
+                                        + "when what they control is live.",
+                                    ["properties"] = new JsonObject
+                                    {
+                                        ["action"] = Property("string",
+                                            "SwitchScene, ToggleRecord, ToggleStream or ToggleMute."),
+                                        ["target"] = Property("string",
+                                            "Scene name for SwitchScene, audio source name for "
+                                            + "ToggleMute. Not used by the others.")
+                                    },
+                                    ["required"] = new JsonArray { "action" }
+                                }
                             },
-                            ["required"] = new JsonArray { "label", "hotkey" }
+                            ["required"] = new JsonArray { "label" }
                         }
                     },
                     ["target_page"] = Property("string",

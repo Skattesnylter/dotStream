@@ -5,7 +5,36 @@ software is not good.
 
 Not an Elgato-compatible plugin host. Deliberately.
 
-### If yours says something else on it
+## Let an assistant build your pages
+
+Setting up a deck is tedious. Fifteen keys, each needing a shortcut you have to look
+up, a label and an icon, and you do it again for every application. Most people fill
+in four keys and never touch it again.
+
+dotStream speaks **MCP** in both directions, so an AI assistant can do that part.
+
+> **You:** set up an Excel page for me
+>
+> The assistant proposes thirteen keys with shortcuts, labels and icons already
+> filled in. They appear on the deck with **Accept**, **Reject** and **Later**.
+> You press one physical key.
+
+It works because the assistant can look things up that you would otherwise have to.
+Ask for an OBS page and it queries OBS for your actual scene names and audio sources
+before proposing anything. Ask for ribbon commands and it writes them as key
+sequences, so `Alt, H, M, C` becomes a Merge and Centre key even though Excel has no
+shortcut for it.
+
+**A person always presses Save.** The assistant fills in, you decide. A physical
+button has to do what you believe it does, so nothing is placed without you seeing it
+first, on the deck, next to the two keys that accept or reject it.
+
+An assistant can also ask *you* something and wait for the answer on a physical key,
+which is the other direction and the reason this is a server rather than a plugin.
+
+Switch it on under **File → Agent bridge (MCP)**. Off by default.
+
+## If yours says something else on it
 
 The same hardware is a Mirabox HSV293S underneath, sold under a pile of names.
 If you own any of these, this is for you too:
@@ -60,6 +89,7 @@ working somewhere else.
 | ✅ | Steam games, which the Windows shell cannot see at all |
 | ✅ | Cell calibration for variants nobody has measured |
 | ✅ | Start with Windows, into the tray |
+| ✅ | OBS Studio — scenes, recording, streaming and mute, with keys that light up |
 | ⬜ | Generic MCP client action — a key that calls someone else's tool |
 | ⬜ | Folders and a page-switch key |
 
@@ -152,10 +182,34 @@ not move while you are using it.
 | **Run** | A program or script, with arguments |
 | **Link** | A URL or a file. `steam://rungameid/892970` starts Valheim |
 | **Media** | Play/pause, next, previous, volume, mute — with live state and album art |
+| **OBS Studio** | Switch scene, start recording or streaming, mute a source |
 | **Widget** | CPU, RAM or clock, on the three cells in column five |
 
 Volume keys repeat while held. Every key reports press and release separately,
 because the hardware does.
+
+### OBS Studio
+
+Turn on **Tools → WebSocket Server Settings → Enable WebSocket server** in OBS.
+dotStream reads the port and password from OBS's own configuration, so there is
+nothing to copy across, and it connects on its own whenever OBS is running.
+
+The OBS entry then appears in the action list, and disappears again when OBS closes.
+A key that talks to a program which is not running is a key that does nothing.
+
+**These keys light up.** A scene key is lit while its scene is live, the record key
+while recording, a mute key while that source is muted. The lighting comes from OBS
+telling us it changed, not from what the key last did, so it stays right when you
+change something in OBS itself. That is the reason for going through the websocket
+instead of sending a keyboard shortcut.
+
+**A scene key shows the scene.** OBS renders a thumbnail on request, so instead of a
+generic icon the key shows what that scene actually contains, refreshed every few
+seconds while the key is in view.
+
+And an assistant can build the whole page for you. It asks OBS for your scenes and
+audio sources, proposes the keys, and you accept or reject on the deck without typing
+a single scene name.
 
 ### Which applications are listed
 
@@ -190,12 +244,21 @@ continuously. Plug in whenever; it wakes up.
 Closing the window hides it to the tray, because the deck has to keep working. **File
 → Exit** quits properly, and leaves the deck dark.
 
-### Agents
+### Connecting an assistant
 
-**File → Agent bridge (MCP)** lets an AI assistant read and write your deck — propose
-a page of keys for you to accept or reject, put a question on physical keys and wait
-for the answer. Off by default. **Help → Instructions for your AI assistant** gives
-you the address to hand over.
+**File → Agent bridge (MCP)** starts the server, and **Help → Instructions for your AI
+assistant** opens the page to hand over. Paste the address to your assistant and it
+has everything it needs, including the tool list and how to write a key sequence.
+
+| tool | what it does |
+|---|---|
+| `deck_propose_page` | Offer a page of keys for you to accept, reject or defer |
+| `deck_set_key` | Put one key in one place |
+| `deck_ask` | Ask a question and wait for you to answer on a physical key |
+| `deck_notify` | Put a message on an info cell |
+| `deck_status` | What the deck is showing, and what is playing |
+
+It listens on `127.0.0.1` only.
 
 ## Build & run
 

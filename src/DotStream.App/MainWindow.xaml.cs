@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -104,6 +105,18 @@ public partial class MainWindow : Window, IDeckAgent
 
     private readonly AgentState _agent = new();
     private readonly McpClient _mcpClient = new();
+    private readonly ObsClient _obs = new();
+
+    // What OBS says is happening, so keys can be lit without asking on every repaint.
+    private string? _obsScene;
+    private bool _obsRecording;
+    private bool _obsStreaming;
+    private readonly Dictionary<string, bool> _obsMuted = new(StringComparer.Ordinal);
+
+    // What each scene currently looks like. OBS renders these itself, so a scene key
+    // can show the scene rather than a generic icon.
+    private readonly Dictionary<string, BitmapSource> _obsThumbnails = new(StringComparer.Ordinal);
+    private DateTime _obsThumbsDue = DateTime.MinValue;
     private McpServer? _mcp;
 
     public MainWindow()
@@ -216,6 +229,8 @@ public partial class MainWindow : Window, IDeckAgent
         // still tells the truth after somebody turns it off in Task Manager.
         StartWithWindowsMenuItem.IsChecked = StartWithWindows.IsEnabled;
 
+        BuildPinMenu();
+
         UpdateMcpMenuItem();
         if (_settings.McpEnabled) StartMcp(announce: false);
 
@@ -240,6 +255,8 @@ public partial class MainWindow : Window, IDeckAgent
 
         // Last, not first: started at login the deck should come up painted, and hiding
         // before the apps are loaded would leave it blank for as long as that takes.
+        // OBS is optional and usually not running, so this is last and quiet.
+        await ConnectObsAsync();
         if (App.StartHidden) HideToTray();
     }
 
@@ -321,6 +338,7 @@ public partial class MainWindow : Window, IDeckAgent
         _focusSettled.Stop();
 
         if (_mcp is not null) await _mcp.DisposeAsync();
+        await _obs.DisposeAsync();
         _mcpClient.Dispose();
         _watcher?.Dispose();
         _tray?.Dispose();
@@ -426,7 +444,14 @@ public partial class MainWindow : Window, IDeckAgent
         // right-click away on any key.
         foreach (ActionDefinition action in _catalog.Actions)
         {
-            bool belongs = action.Category == "Navigation" || (media && action.Category == "Media");
+            // OBS follows the same rule as the media transport: offered when there is
+            // something to control, absent when there is not. A key that talks to a
+            // program which is not running is a key that does nothing, and a palette
+            // full of those is how software stops being trusted.
+            bool belongs = action.Category == "Navigation"
+                           || (media && action.Category == "Media")
+                           || (action.Id == "obs.control" && _obs.IsConnected);
+
             if (!belongs) continue;
 
             items.Add(new ActionListItem(
@@ -728,6 +753,8 @@ public partial class MainWindow : Window, IDeckAgent
                             BuildRunButton(run),
                         "link" when JsonSerializer.Deserialize<LinkBinding>(cell.Value) is { } link =>
                             BuildLinkButton(link),
+                        "obs" when JsonSerializer.Deserialize<ObsBinding>(cell.Value) is { } obs =>
+                            BuildObsButton(obs),
                         _ => null
                     };
 
@@ -1350,10 +1377,11 @@ public partial class MainWindow : Window, IDeckAgent
             "input.text" => CreateTextButton(existing: null),
             "input.run" => CreateRunButton(existing: null),
             "input.link" => CreateLinkButton(existing: null),
+            "obs.control" => CreateObsButton(existing: null),
             _ => null
         };
 
-        if (action.Id is "mcp.call" or "input.hotkey" or "input.text" or "input.run" or "input.link")
+        if (action.Id is "mcp.call" or "input.hotkey" or "input.text" or "input.run" or "input.link" or "obs.control")
         {
             if (configured is not null) Assign(protocolIndex, configured, action.Name);
             return;
@@ -1401,6 +1429,274 @@ public partial class MainWindow : Window, IDeckAgent
             StatusLabel.Text = outcome;
 
             return Task.CompletedTask;
+        }
+    };
+
+    // ---------------------------------------------------------------------- OBS
+
+    /// <summary>
+    /// Connects to OBS if it is running with its websocket server on.
+    ///
+    /// Quiet about failure by design. The server is off by default, so "cannot connect"
+    /// is the normal state for almost everyone and is not worth a dialog. The key's own
+    /// window explains what to switch on, at the moment somebody is actually trying to
+    /// use it.
+    /// </summary>
+    private async Task ConnectObsAsync()
+    {
+        if (_obs.IsConnected) return;
+        if (ObsClient.ReadConfig() is not { Enabled: true } config) return;
+
+        try
+        {
+            await _obs.ConnectAsync(config.Port, config.Password);
+            DeckLog.Out("obs", "connected on port " + config.Port);
+
+            _obs.Event += OnObsEvent;
+            _obs.Closed += (_, _) => Dispatcher.Invoke(() =>
+            {
+                DeckLog.Note("obs", "connection closed");
+
+                RepaintKeys(highPriority: false);
+                ShowActionsFor(_navigator.Current);
+            });
+
+            await RefreshObsStateAsync();
+
+            RepaintKeys(highPriority: false);
+            ShowActionsFor(_navigator.Current);
+        }
+        catch (Exception ex)
+        {
+            DeckLog.Note("obs", "could not connect: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Reads what OBS is doing now, so keys are lit correctly before anything changes.
+    ///
+    /// Events only report transitions. Without an initial read, a scene key stays dark
+    /// until somebody switches scenes - which looks exactly like the lighting not
+    /// working.
+    /// </summary>
+    private async Task RefreshObsStateAsync()
+    {
+        try
+        {
+            if (await _obs.CallAsync("GetSceneList") is { } scenes)
+                _obsScene = scenes["currentProgramSceneName"]?.GetValue<string>();
+
+            if (await _obs.CallAsync("GetRecordStatus") is { } record)
+                _obsRecording = record["outputActive"]?.GetValue<bool>() ?? false;
+
+            if (await _obs.CallAsync("GetStreamStatus") is { } stream)
+                _obsStreaming = stream["outputActive"]?.GetValue<bool>() ?? false;
+        }
+        catch (Exception ex)
+        {
+            DeckLog.Note("obs", "state read failed: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Refreshes the picture on any scene key currently in view.
+    ///
+    /// Only what is on screen, and only every few seconds. A screenshot costs about
+    /// five milliseconds, which is nothing on its own and adds up if every scene in a
+    /// large collection is fetched whether or not anyone can see it.
+    ///
+    /// The scene that is live changes constantly - it is a video feed - so this is a
+    /// glance at it, not a preview monitor. Anything faster would be spending the
+    /// upload budget on something a 100 pixel cell cannot show anyway.
+    /// </summary>
+    private async Task RefreshObsThumbnailsAsync()
+    {
+        if (!_obs.IsConnected || DateTime.UtcNow < _obsThumbsDue) return;
+
+        _obsThumbsDue = DateTime.UtcNow.AddSeconds(3);
+
+        List<string> scenes = (_navigator.Current?.Cells.Values ?? Enumerable.Empty<DeckButton>())
+            .Select(b => b.Tag as ObsBinding)
+            .Where(o => o is { Action: ObsAction.SwitchScene } && o.Target.Length > 0)
+            .Select(o => o!.Target)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (scenes.Count == 0) return;
+
+        bool changed = false;
+
+        foreach (string scene in scenes)
+        {
+            try
+            {
+                JsonNode? shot = await _obs.CallAsync("GetSourceScreenshot", new JsonObject
+                {
+                    ["sourceName"] = scene,
+                    ["imageFormat"] = "jpg",
+                    ["imageWidth"] = _settings.CellPixels,
+                    ["imageHeight"] = _settings.CellPixels,
+                    ["imageCompressionQuality"] = 85
+                });
+
+                if (shot?["imageData"]?.GetValue<string>() is not { } encoded) continue;
+
+                int comma = encoded.IndexOf(',');
+                if (comma < 0) continue;
+
+                byte[] bytes = Convert.FromBase64String(encoded[(comma + 1)..]);
+
+                var image = new BitmapImage();
+                image.BeginInit();
+                image.StreamSource = new MemoryStream(bytes);
+                image.CacheOption = BitmapCacheOption.OnLoad;
+                image.EndInit();
+                image.Freeze();
+
+                _obsThumbnails[scene] = image;
+                changed = true;
+            }
+            catch (Exception)
+            {
+                // A scene can be deleted between listing it and asking for its picture.
+            }
+        }
+
+        if (changed) RepaintKeys(highPriority: false);
+    }
+
+    private void OnObsEvent(object? sender, ObsEventArgs e) => Dispatcher.Invoke(() =>
+    {
+        switch (e.Type)
+        {
+            case "CurrentProgramSceneChanged":
+                _obsScene = e.Data?["sceneName"]?.GetValue<string>();
+                break;
+
+            case "RecordStateChanged":
+                _obsRecording = e.Data?["outputActive"]?.GetValue<bool>() ?? false;
+                break;
+
+            case "StreamStateChanged":
+                _obsStreaming = e.Data?["outputActive"]?.GetValue<bool>() ?? false;
+                break;
+
+            case "InputMuteStateChanged":
+                string? input = e.Data?["inputName"]?.GetValue<string>();
+                if (input is null) return;
+
+                _obsMuted[input] = e.Data?["inputMuted"]?.GetValue<bool>() ?? false;
+                break;
+
+            default:
+                return;
+        }
+
+        RepaintKeys(highPriority: true);
+    });
+
+    /// <summary>Whether the thing this key controls is currently on.</summary>
+    private bool IsObsActive(ObsBinding obs) => obs.Action switch
+    {
+        ObsAction.SwitchScene => string.Equals(_obsScene, obs.Target, StringComparison.Ordinal),
+        ObsAction.ToggleRecord => _obsRecording,
+        ObsAction.ToggleStream => _obsStreaming,
+        ObsAction.ToggleMute => _obsMuted.TryGetValue(obs.Target, out bool muted) && muted,
+        _ => false
+    };
+
+    /// <summary>
+    /// Turns whatever an agent proposed into a key.
+    ///
+    /// Deliberately narrow. A proposal may only contain things the user can see and
+    /// judge on the deck before accepting, so this handles exactly those two and
+    /// nothing else.
+    /// </summary>
+    private DeckButton BuildProposedButton(object binding) => binding switch
+    {
+        ObsBinding obs => BuildObsButton(obs),
+        HotkeyBinding hotkey => BuildHotkeyButton(hotkey),
+        _ => throw new ArgumentOutOfRangeException(nameof(binding), binding, "Not a proposable binding.")
+    };
+
+    private DeckButton? CreateObsButton(ObsBinding? existing)
+    {
+        var dialog = new ObsWindow(existing, _obs) { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Result is null) return null;
+
+        return BuildObsButton(dialog.Result);
+    }
+
+    private DeckButton BuildObsButton(ObsBinding obs) => new()
+    {
+        Tag = obs,
+        Visual = () =>
+        {
+            bool active = _obs.IsConnected && IsObsActive(obs);
+
+            // Lit means live. That is the whole reason for going through the websocket
+            // rather than sending a hotkey, so it should be unmistakable.
+            var visual = new CellVisual
+            {
+                Background = active ? Color.FromRgb(0x3A, 0x12, 0x12) : Color.FromRgb(0x1A, 0x0E, 0x0E),
+                BackgroundGradientTo = active ? Color.FromRgb(0x20, 0x0A, 0x0A) : Color.FromRgb(0x0D, 0x08, 0x08),
+                Label = obs.DisplayLabel,
+                LabelColor = _obs.IsConnected ? Colors.White : Color.FromRgb(0x80, 0x80, 0x8A),
+                LabelSize = _textLab.LabelSize,
+                LabelPosition = LabelPosition.Bottom,
+                ReservedLabelLines = 1
+            };
+
+            // A scene key shows the scene. It is the one case where a picture says
+            // more than any icon could, and OBS is already rendering it.
+            if (obs.Action == ObsAction.SwitchScene &&
+                _obsThumbnails.TryGetValue(obs.Target, out BitmapSource? thumbnail))
+            {
+                return visual with
+                {
+                    Icon = thumbnail,
+                    IconScale = 1.0,
+                    LabelPosition = LabelPosition.Bottom,
+                    ReservedLabelLines = 1
+                };
+            }
+
+            if (obs.FileImage is { } image)
+                return visual with { Icon = image, IconScale = 0.68 };
+
+            Color tint = !_obs.IsConnected ? Color.FromRgb(0x60, 0x50, 0x50)
+                       : active ? Color.FromRgb(0xFF, 0x8A, 0x8A)
+                       : Color.FromRgb(0xE0, 0x6C, 0x6C);
+
+            return obs.ResolvedIcon is { } icon ? icon.ApplyTo(visual, tint) : visual;
+        },
+        OnPress = async () =>
+        {
+            if (!_obs.IsConnected)
+            {
+                // It may simply have been started since dotStream was.
+                await ConnectObsAsync();
+
+                if (!_obs.IsConnected)
+                {
+                    StatusLabel.Text = "OBS is not answering. Start it, and turn on Tools > WebSocket Server Settings.";
+                    return;
+                }
+            }
+
+            (string type, System.Text.Json.Nodes.JsonObject? data) = obs.Request();
+
+            try
+            {
+                await _obs.CallAsync(type, data);
+                DeckLog.Out("obs", type + (data is null ? "" : "  " + data.ToJsonString()));
+                StatusLabel.Text = obs.Describe();
+            }
+            catch (Exception ex)
+            {
+                DeckLog.Note("obs", type + " failed: " + ex.Message);
+                StatusLabel.Text = "OBS did not accept that: " + ex.Message;
+            }
         }
     };
 
@@ -1870,15 +2166,28 @@ public partial class MainWindow : Window, IDeckAgent
             return new AskResult(false, -1, null,
                 $"There is no page or installed application called \"{targetPage}\".");
 
-        var built = new List<(int Index, HotkeyBinding Binding)>();
+        // Object rather than HotkeyBinding: a proposal may now carry OBS actions too,
+        // and the two are stored, drawn and merged the same way once built.
+        var built = new List<(int Index, object Binding)>();
         var taken = new HashSet<int>();
 
         foreach (ProposedKey key in keys)
         {
-            // A sequence is as valid as a chord here. Validating with Hotkey.Parse
-            // rejected "Alt, H, M, C" outright, which is the one thing a ribbon
-            // command can be written as.
-            if (KeySequence.Parse(key.Hotkey).Count == 0) continue;
+            object? binding = null;
+
+            if (key.Obs is { } obs && Enum.TryParse(obs.Action, ignoreCase: true, out ObsAction action))
+            {
+                binding = new ObsBinding(action, obs.Target, key.Label, key.Icon);
+            }
+            else if (KeySequence.Parse(key.Hotkey).Count > 0)
+            {
+                // A sequence is as valid as a chord here. Validating with Hotkey.Parse
+                // rejected "Alt, H, M, C" outright, which is the one thing a ribbon
+                // command can be written as.
+                binding = new HotkeyBinding(key.Hotkey, key.Label, key.Icon);
+            }
+
+            if (binding is null) continue;
 
             int index = key.Index is { } wanted && DeckLayout.IsValid(wanted) && !DeckLayout.IsInfoCell(wanted)
                 ? wanted
@@ -1887,18 +2196,19 @@ public partial class MainWindow : Window, IDeckAgent
             if (index < 0) continue;
 
             taken.Add(index);
-            built.Add((index, new HotkeyBinding(key.Hotkey, key.Label, key.Icon)));
+            built.Add((index, binding));
         }
 
         if (built.Count == 0)
-            return new AskResult(false, -1, null, "None of the key combinations could be parsed.");
+            return new AskResult(false, -1, null, "None of the keys could be understood.");
 
         // One key is an edit, not a page. Show it in the hotkey window with everything
         // the agent chose already filled in, so the combination, label and icon can be
         // changed before they are kept. Accept or reject on the deck is the right shape
         // for thirteen keys and the wrong one for a single suggestion, where it is take
         // it or leave it and no way to fix a name.
-        if (built.Count == 1) return await ReviewSingleKeyAsync(pageName, built[0], target, targetApp);
+        if (built.Count == 1 && built[0].Binding is HotkeyBinding single)
+            return await ReviewSingleKeyAsync(pageName, (built[0].Index, single), target, targetApp);
 
         if (!_agent.TryBeginAsk(out Task<AskResult> pending)) return await pending;
 
@@ -1909,8 +2219,8 @@ public partial class MainWindow : Window, IDeckAgent
             // something you can no longer see.
             var preview = new DeckPage { Id = "agent:propose", Title = pageName + "  (proposed)" };
 
-            foreach ((int index, HotkeyBinding binding) in built)
-                preview.Set(index, BuildHotkeyButton(binding));
+            foreach ((int index, object binding) in built)
+                preview.Set(index, BuildProposedButton(binding));
 
             preview.SetAt(2, 2, DecisionKey("Later", Color.FromRgb(0x3A, 0x30, 0x14),
                 Color.FromRgb(0xFF, 0xC9, 0x6B), () => _agent.Complete(new AskResult(true, 2, "Later", "postponed"))));
@@ -1952,10 +2262,13 @@ public partial class MainWindow : Window, IDeckAgent
                     // where the user put it.
                     page = destination;
 
-                    foreach ((int index, HotkeyBinding binding) in built)
+                    foreach ((int index, object binding) in built)
                     {
-                        page.Set(index, BuildHotkeyButton(binding));
-                        LibraryFor(page.Id).Add(binding);
+                        page.Set(index, BuildProposedButton(binding));
+
+                        // Only hotkeys go in the page library. It is a list of things
+                        // this application can do, and an OBS action is not one of them.
+                        if (binding is HotkeyBinding hotkey) LibraryFor(page.Id).Add(hotkey);
                     }
                 }
                 else
@@ -1966,10 +2279,11 @@ public partial class MainWindow : Window, IDeckAgent
                     if (_catalog?.ById("nav.back") is { } back)
                         page.SetAt(2, 0, back.Create(_navigator));
 
-                    foreach ((int index, HotkeyBinding binding) in built)
+                    foreach ((int index, object binding) in built)
                     {
-                        page.Set(index, BuildHotkeyButton(binding));
-                        LibraryFor(id).Add(binding);
+                        page.Set(index, BuildProposedButton(binding));
+
+                        if (binding is HotkeyBinding hotkey) LibraryFor(id).Add(hotkey);
                     }
 
                     _pages[id] = page;
@@ -2187,8 +2501,102 @@ public partial class MainWindow : Window, IDeckAgent
     }
 
     /// <summary>Hold the deck where the user put it.</summary>
-    private void Pin() =>
-        _pinnedUntil = DateTime.UtcNow + TimeSpan.FromSeconds(Math.Max(5, _settings.PinSeconds));
+    private void Pin()
+    {
+        // Clamped at both ends. Below five seconds the deck moves while you are still
+        // looking at it; "never" is stored as int.MaxValue, which is more seconds than
+        // DateTime can hold.
+        _pinnedUntil = _settings.PinSeconds >= int.MaxValue
+            ? DateTime.MaxValue
+            : DateTime.UtcNow + TimeSpan.FromSeconds(Math.Clamp(_settings.PinSeconds, 5, 86_400));
+        ShowPinState();
+    }
+
+    /// <summary>
+    /// The choices for how long a manual page stays put.
+    ///
+    /// A menu of durations rather than a number box: nobody wants to type 45, they want
+    /// "longer than that". Never is included because on a deck that is only ever driven
+    /// by hand, automatic switching is the wrong feature entirely.
+    /// </summary>
+    private void BuildPinMenu()
+    {
+        (string Label, int Seconds)[] choices =
+        [
+            ("10 seconds", 10),
+            ("30 seconds", 30),
+            ("1 minute", 60),
+            ("5 minutes", 300),
+            ("Never let go", int.MaxValue),
+        ];
+
+        PinMenu.Items.Clear();
+
+        foreach ((string label, int seconds) in choices)
+        {
+            var item = new MenuItem
+            {
+                Header = label,
+                IsCheckable = true,
+                IsChecked = _settings.PinSeconds == seconds,
+                Tag = seconds
+            };
+
+            item.Click += (s, _) =>
+            {
+                _settings.PinSeconds = (int)((MenuItem)s!).Tag;
+                _settings.Save();
+
+                BuildPinMenu();
+                StatusLabel.Text = $"The deck now stays where you put it for {label.ToLowerInvariant()}.";
+            };
+
+            PinMenu.Items.Add(item);
+        }
+    }
+
+    /// <summary>
+    /// Shows how long manual navigation is holding the deck, and hides itself when it
+    /// is not.
+    ///
+    /// Standing still and being broken look identical from the outside. Following
+    /// simply stops for a while, with nothing anywhere saying why, and the reasonable
+    /// conclusion is that the feature is faulty - which is exactly the conclusion the
+    /// person who wrote it reached, twice, in one evening.
+    /// </summary>
+    private void ShowPinState()
+    {
+        if (PinBadge is null) return;
+
+        double left = (_pinnedUntil - DateTime.UtcNow).TotalSeconds;
+
+        if (left <= 0)
+        {
+            PinBadge.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        PinLabel.Text = _pinnedUntil == DateTime.MaxValue
+            ? "Held here"
+            : $"Held here {Math.Ceiling(left):0} s";
+        PinBadge.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>
+    /// Ends the hold now. Clicking the thing that explains why nothing is happening is
+    /// the obvious way to ask for it to start happening.
+    /// </summary>
+    private void OnReleasePin(object sender, MouseButtonEventArgs e)
+    {
+        _pinnedUntil = DateTime.MinValue;
+        ShowPinState();
+
+        StatusLabel.Text = "Following the focused app again.";
+
+        // Do not wait for the next window change: the app in front now is the one they
+        // want, and they just said so.
+        if (_watcher?.LastApp is { } current) ApplyForeground(current);
+    }
 
     private void OnToggleMcp(object sender, RoutedEventArgs e)
     {
@@ -2389,7 +2797,11 @@ public partial class MainWindow : Window, IDeckAgent
 
     private async void OnTick(object? sender, EventArgs e)
     {
+        ShowPinState();
+
         if (_controller is null) return;
+
+        await RefreshObsThumbnailsAsync();
 
         DeckPage? page = _navigator.Current;
 

@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DotStream.App.Mcp;
@@ -154,6 +154,11 @@ public static class ProfileStore
                     {
                         Kind = "link",
                         Value = JsonSerializer.Serialize(link, Options)
+                    },
+                    ObsBinding obs => new CellRecord
+                    {
+                        Kind = "obs",
+                        Value = JsonSerializer.Serialize(obs, Options)
                     },
                     WidgetPlacement widget => new CellRecord
                     {

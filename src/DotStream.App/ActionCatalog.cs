@@ -236,6 +236,22 @@ public sealed class ActionCatalog
 
         new ActionDefinition
         {
+            Id = "obs.control",
+            Name = "OBS Studio",
+            Category = "Input",
+            Preview = Glyph(Glyphs.Link, Color.FromRgb(0x1A, 0x0E, 0x0E),
+                Color.FromRgb(0xE0, 0x6C, 0x6C), "OBS"),
+            // Configured per key: the window reads the scene list from OBS when dropped.
+            Create = _ => new DeckButton
+            {
+                Tag = "obs.control",
+                Visual = () => Glyph(Glyphs.Link, Color.FromRgb(0x1A, 0x0E, 0x0E),
+                    Color.FromRgb(0xE0, 0x6C, 0x6C), "OBS")
+            }
+        },
+
+        new ActionDefinition
+        {
             Id = "input.link",
             Name = "Open a link",
             Category = "Input",
