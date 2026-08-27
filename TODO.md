@@ -539,6 +539,43 @@ a scope ordinary applications are not given. Do not promise these.
       is precisely not when you want mute. Register a global keybind inside Discord
       (`Ctrl+Alt+F9`, or F13–F24) and have the key send that instead.
 
+**OBS Studio — `obs-websocket`.** The reason stream decks exist in the first place, and
+the only integration here that ordinary buyers already expect. Every rebrand of this
+hardware advertises "OBS ready" on the box, so its absence is the first thing a streamer
+will notice about dotStream.
+
+Built into OBS since version 28, so nothing to install. JSON over WebSocket on port 4455,
+SHA256 challenge-response for the password, and it reports state as well as accepting
+commands — which puts it in the same category as Discord's RPC events rather than the
+blind hotkey path.
+
+- [ ] Scene switching, with the **current scene lit**. `GetCurrentProgramScene` plus the
+      `CurrentProgramSceneChanged` event. A key that shows which scene is live is the
+      whole point; one that only switches is a hotkey with extra steps.
+- [ ] Start and stop recording and streaming, lit while active, with the recording timer
+      as a candidate for an info cell
+- [ ] Mute toggles per audio source, lit when muted. `SetInputMute` and the
+      `InputMuteStateChanged` event
+- [ ] Scene item visibility — show or hide an overlay, a camera, a browser source
+- [ ] Virtual camera and replay buffer, since both are one call each
+- [ ] Populate a page from OBS itself. `GetSceneList` returns the scenes, so a proposed
+      page of real scene keys beats making somebody type them. Same shape as
+      `deck_propose_page` already uses.
+
+**vMix — HTTP.** Simpler than OBS and worth doing at the same time, since the action
+model is identical. A GET to `http://localhost:8088/api/?Function=Cut&Input=2` does the
+work, and the same endpoint without a function returns the full state as XML, so lit
+keys are available here too.
+
+- [ ] Cut, fade and transition to an input, with the active input lit
+- [ ] Recording, streaming and multicorder toggles
+- [ ] Overlay on and off
+
+Both belong behind the same optional-provider rule as Office and Discord. Neither should
+replace the hotkey path, and neither should be reachable in the palette when the
+application is not running - an OBS page on a machine with no OBS is a page of keys that
+silently do nothing.
+
 ## 10. Motion, now that it turns out to be free
 
 The deck sustains thirty frames per second across all eighteen cells, measured. That
