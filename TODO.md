@@ -589,15 +589,43 @@ a token.
       **without** the parameter. Sending it explicitly fails with `Redirect URI cannot
       be used in the RPC OAuth2 Authorization flow`, whether or not it is registered.
       Two errors that each suggest the opposite of the fix.
-- [ ] **Exchange the code for a token.** `POST /api/oauth2/token` with the client
-      secret, then `AUTHENTICATE` over the pipe with the access token. Only after that
-      do the voice commands work. The secret has to live somewhere on the user's
-      machine, which is a question worth thinking about before building on this: a
-      desktop application cannot keep one, so either every user registers their own
-      application or it ships in the binary for anyone to read.
-- [ ] Then the actual point: `GET_VOICE_SETTINGS` for initial state, subscribe to
-      `VOICE_SETTINGS_UPDATE`, and a mute key lit from what Discord reports rather
-      than from what the key last did.
+- [x] **No client secret is needed either.** Measured 27.08.2026. Turn on **Public
+      Client** in the portal and use PKCE. That is the setting Discord provides for
+      exactly this case, and the portal says so in a sentence nobody reads: "Public
+      clients cannot maintain the confidentiality of their client credentials (i.e.
+      desktop/mobile applications)".
+
+      A secret in an open-source desktop application would have been theatre anyway.
+      It would sit in the repository, readable by anyone, and be secret in name only.
+
+- [x] **The whole chain is proven.** End to end, on this machine:
+
+      ```
+      1. NamedPipeClientStream to discord-ipc-0
+      2. opcode 0  HANDSHAKE   {"v":1,"client_id":"..."}
+      3. opcode 1  AUTHORIZE   scopes + code_challenge + code_challenge_method S256
+                               and NO redirect_uri in the call
+      4. POST https://discord.com/api/oauth2/token
+                               client_id, grant_type=authorization_code, code,
+                               code_verifier, redirect_uri  (no secret)
+      5. opcode 1  AUTHENTICATE {"access_token":"..."}
+      6. opcode 1  GET_VOICE_SETTINGS
+      ```
+
+      Token is a Bearer valid for seven days. Step 6 returned live state: mute, deaf,
+      input and output volume, input device and whether the user is on push-to-talk or
+      voice activity. That is everything a lit mute key needs.
+
+      Three assumptions in this section were wrong and all three were measured away in
+      under half an hour. Each error message pointed away from its own fix.
+
+- [ ] Build it: `GET_VOICE_SETTINGS` on connect, subscribe to `VOICE_SETTINGS_UPDATE`,
+      and a mute key lit from what Discord reports rather than from what the key last
+      did. Same shape as the OBS keys.
+- [ ] Decide where the seven-day token lives, and what happens when it expires. A
+      refresh token comes back with it; the question is whether to store both in
+      `%APPDATA%` in the clear or through DPAPI, which is the first thing in this
+      project that is genuinely a credential.
 - [ ] Meanwhile: a Discord page built on **global keybinds**. `Ctrl+Shift+M` and
       `Ctrl+Shift+D` are Discord's defaults but only fire when Discord has focus - which
       is precisely not when you want mute. Register a global keybind inside Discord
