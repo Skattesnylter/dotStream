@@ -1,4 +1,7 @@
-# Generates src/DotStream.App/Resources/dotstream.ico
+﻿# Generates src/DotStream.App/Resources/dotstream.ico and dotstream-1024.png
+#
+# The PNG is for everywhere that will not take an .ico: the Discord developer portal
+# wants 1024x1024, and package listings generally want a PNG too.
 #
 # The mark is the name: a dot. Dark body circle, accent dot centred at 37.5% of the
 # canvas - the same geometry the tray icon used before it became an asset.
@@ -77,3 +80,11 @@ $writer.Flush(); $writer.Dispose(); $file.Dispose()
 
 $resolved = (Resolve-Path $OutputPath).Path
 "wrote $resolved ($((Get-Item $resolved).Length) bytes, $($Sizes.Count) sizes)"
+
+# A single large PNG, same mark, for places that cannot read an .ico.
+$pngPath = Join-Path (Split-Path $OutputPath -Parent) 'dotstream-1024.png'
+$large = New-Png 1024
+$large.Save($pngPath, [System.Drawing.Imaging.ImageFormat]::Png)
+$large.Dispose()
+
+"wrote $pngPath"
