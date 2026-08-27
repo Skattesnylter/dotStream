@@ -567,10 +567,31 @@ a scope ordinary applications are not given. Do not promise these.
 
       Note that Python's `open()` cannot open a Windows named pipe and reports it as
       missing, which reads exactly like Discord not running. Use the .NET class.
-- [ ] **Settle the whitelist question**, which is now the only thing in the way.
-      Register an application in the Developer Portal, handshake with its real id,
-      attempt `AUTHORIZE` with `rpc.voice.write`, and see whether it is granted or
-      refused. The answer decides whether the route is worth anything.
+- [x] **There is no whitelist.** Measured 27.08.2026, and it overturns the
+      assumption this section was built on. An application registered ten minutes
+      earlier, with no review and no partner status, was granted `rpc`,
+      `rpc.voice.read` and `rpc.voice.write` and returned an OAuth2 code.
+
+      The reason almost nobody does this is therefore not that Discord refuses. It
+      is more likely that the flow is undocumented enough to look refused, because
+      the error messages point the wrong way.
+
+      **`redirect_uri` is the trap.** Sending `AUTHORIZE` without it fails with
+      `Missing "redirect_uri" in request`, which reads as a missing parameter and is
+      not. It means the *application* has no redirect URI registered in the Developer
+      Portal. Add any URL there - it is never navigated to - and then send `AUTHORIZE`
+      **without** the parameter. Sending it explicitly fails with `Redirect URI cannot
+      be used in the RPC OAuth2 Authorization flow`, whether or not it is registered.
+      Two errors that each suggest the opposite of the fix.
+- [ ] **Exchange the code for a token.** `POST /api/oauth2/token` with the client
+      secret, then `AUTHENTICATE` over the pipe with the access token. Only after that
+      do the voice commands work. The secret has to live somewhere on the user's
+      machine, which is a question worth thinking about before building on this: a
+      desktop application cannot keep one, so either every user registers their own
+      application or it ships in the binary for anyone to read.
+- [ ] Then the actual point: `GET_VOICE_SETTINGS` for initial state, subscribe to
+      `VOICE_SETTINGS_UPDATE`, and a mute key lit from what Discord reports rather
+      than from what the key last did.
 - [ ] Meanwhile: a Discord page built on **global keybinds**. `Ctrl+Shift+M` and
       `Ctrl+Shift+D` are Discord's defaults but only fire when Discord has focus - which
       is precisely not when you want mute. Register a global keybind inside Discord
