@@ -7,7 +7,24 @@ the AKP153E arrived on 04.08.2026 and everything they gated is measured.
 
 ## Releases
 
-Currently **1.2.0**, which adds Discord.
+Currently **1.3.0**.
+
+**1.3.0:**
+
+- [x] **Voice channel keys, including ones that fill themselves.** A slot is "the nth
+      channel of whichever server I am in", so a row of five follows the user between
+      servers without a page each. Each shows how many people are in it, and the one
+      you are in is red against the others.
+- [x] **Camera and screen share.** Not in Discord's public documentation, and found by
+      the shape of the refusal: `TOGGLE_VIDEO` answers 4006 "invalid scope" where an
+      invented command answers 4002 "invalid command".
+- [x] **`deck_integrations`**, so any assistant can see OBS scenes and Discord channels
+      by name. Without it an agent could propose a key for a scene but never know what
+      the scenes were called, which is most of the value gone.
+- [x] **Default layouts**, reachable from the menu and over MCP from one definition.
+- [x] **Every Discord pipe instance is tried**, not just the first. Discord opens ten
+      because several programs talk to it at once, and something else had the first.
+      The timeout read as "Discord is not running" while it was running the whole time.
 
 **1.2.0:**
 

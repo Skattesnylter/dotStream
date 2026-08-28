@@ -90,7 +90,7 @@ working somewhere else.
 | ✅ | Cell calibration for variants nobody has measured |
 | ✅ | Start with Windows, into the tray |
 | ✅ | OBS Studio — scenes, recording, streaming and mute, with keys that light up |
-| ✅ | Discord — mute, deafen and leave, lit from Discord's own state |
+| ✅ | Discord — mute, deafen, camera, screen share, and voice channels that fill themselves |
 | ⬜ | Generic MCP client action — a key that calls someone else's tool |
 | ⬜ | Folders and a page-switch key |
 
