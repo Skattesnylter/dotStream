@@ -288,7 +288,7 @@ public sealed class McpServer : IAsyncDisposable
                     ? slot.GetValue<int>()
                     : null;
 
-                keys.Add(new ProposedKey(label.Trim(), hotkey?.Trim() ?? "",
+                keys.Add(new ProposedKey(label?.Trim() ?? "", hotkey?.Trim() ?? "",
                     entry?["icon"]?.GetValue<string>()?.Trim() ?? "", index, obs, discord));
             }
         }

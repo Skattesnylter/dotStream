@@ -81,10 +81,31 @@ public sealed class DiscordClient : IAsyncDisposable
     /// </summary>
     public async Task ConnectAsync(CancellationToken ct = default)
     {
-        var pipe = new NamedPipeClientStream(".", "discord-ipc-0", PipeDirection.InOut, PipeOptions.Asynchronous);
+        // Discord opens up to ten pipe instances because several programs talk to it at
+        // once, and a client is expected to work down the list. Trying only
+        // discord-ipc-0 fails with a timeout the moment anything else got there first,
+        // which reads as "Discord is not running" and is not.
+        NamedPipeClientStream? pipe = null;
 
-        // Short: Discord is either running or it is not, and waiting does not help.
-        await pipe.ConnectAsync(2000, ct);
+        for (int instance = 0; instance < 10 && pipe is null; instance++)
+        {
+            var candidate = new NamedPipeClientStream(
+                ".", $"discord-ipc-{instance}", PipeDirection.InOut, PipeOptions.Asynchronous);
+
+            try
+            {
+                // Short: an instance is either free now or somebody else has it.
+                await candidate.ConnectAsync(500, ct);
+                pipe = candidate;
+            }
+            catch (Exception ex) when (ex is TimeoutException or IOException)
+            {
+                candidate.Dispose();
+            }
+        }
+
+        if (pipe is null)
+            throw new TimeoutException("No free Discord pipe. Is Discord running?");
 
         _pipe = pipe;
         _ready = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);

@@ -134,6 +134,17 @@ public partial class MainWindow : Window, IDeckAgent
     /// </summary>
     private DateTime _integrationsDue = DateTime.MinValue;
 
+    /// <summary>
+    /// Guards against a second connection attempt while the first is still going.
+    ///
+    /// Discord's authorisation waits for the user to click Approve, during which
+    /// IsConnected is false, so the ten-second retry cheerfully started another. The
+    /// second replaced the pipe, the first read loop died, and its finally cleared
+    /// IsAuthenticated - leaving a token saved on disk and nothing connected.
+    /// </summary>
+    private bool _connectingObs;
+    private bool _connectingDiscord;
+
     // What OBS says is happening, so keys can be lit without asking on every repaint.
     private string? _obsScene;
     private bool _obsRecording;
@@ -1498,8 +1509,10 @@ public partial class MainWindow : Window, IDeckAgent
     /// </summary>
     private async Task ConnectObsAsync()
     {
-        if (_obs.IsConnected) return;
+        if (_obs.IsConnected || _connectingObs) return;
         if (ObsClient.ReadConfig() is not { Enabled: true } config) return;
+
+        _connectingObs = true;
 
         try
         {
@@ -1523,6 +1536,10 @@ public partial class MainWindow : Window, IDeckAgent
         catch (Exception ex)
         {
             DeckLog.Note("obs", "could not connect: " + ex.Message);
+        }
+        finally
+        {
+            _connectingObs = false;
         }
     }
 
@@ -1811,7 +1828,9 @@ public partial class MainWindow : Window, IDeckAgent
     /// </summary>
     private async Task ConnectDiscordAsync()
     {
-        if (_discord.IsConnected) return;
+        if (_discord.IsConnected || _connectingDiscord) return;
+
+        _connectingDiscord = true;
 
         try
         {
@@ -1838,6 +1857,10 @@ public partial class MainWindow : Window, IDeckAgent
         catch (Exception ex)
         {
             DeckLog.Note("discord", "could not connect: " + ex.Message);
+        }
+        finally
+        {
+            _connectingDiscord = false;
         }
     }
 
