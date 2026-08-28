@@ -452,14 +452,15 @@ public partial class MainWindow : Window, IDeckAgent
         // right-click away on any key.
         foreach (ActionDefinition action in _catalog.Actions)
         {
-            // OBS follows the same rule as the media transport: offered when there is
-            // something to control, absent when there is not. A key that talks to a
-            // program which is not running is a key that does nothing, and a palette
-            // full of those is how software stops being trusted.
+            // Two conditions, and the second is the one that was missing. The program
+            // has to be running, or the key would do nothing - but it also has to be
+            // *this* page's program. Offering a Discord key on the Visual Studio Code
+            // page is the same mistake as listing volume controls on a Word page: it
+            // answers a question nobody asked, and it is still one right-click away.
             bool belongs = action.Category == "Navigation"
                            || (media && action.Category == "Media")
-                           || (action.Id == "obs.control" && _obs.IsConnected)
-                           || (action.Id == "discord.control" && _discord.IsConnected);
+                           || (action.Id == "obs.control" && _obs.IsConnected && PageIsFor(page, "OBS"))
+                           || (action.Id == "discord.control" && _discord.IsConnected && PageIsFor(page, "Discord"));
 
             if (!belongs) continue;
 
@@ -476,6 +477,26 @@ public partial class MainWindow : Window, IDeckAgent
             ? $"drag onto a key on the {page.Title ?? "current"} page"
             : $"media controls hidden - {page.Title ?? "this app"} has no audio session. "
               + "Right-click a key to place them anyway.";
+    }
+
+    /// <summary>
+    /// Whether this page belongs to a named program.
+    ///
+    /// True for the application's own page, and true for any page already carrying its
+    /// keys - somebody who put a Discord key on a page of their own clearly wants the
+    /// rest of them offered there too.
+    /// </summary>
+    private static bool PageIsFor(DeckPage page, string program)
+    {
+        if (page.Title?.Contains(program, StringComparison.OrdinalIgnoreCase) == true) return true;
+
+        return page.Cells.Values.Any(b => b.Tag switch
+        {
+            ObsBinding => program == "OBS",
+            DiscordBinding => program == "Discord",
+            InstalledApp app => app.Name.Contains(program, StringComparison.OrdinalIgnoreCase),
+            _ => false
+        });
     }
 
     private bool PageWantsMedia(DeckPage? page)
