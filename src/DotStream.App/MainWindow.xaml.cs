@@ -115,6 +115,11 @@ public partial class MainWindow : Window, IDeckAgent
     private string? _discordChannel;
     private string? _discordGuild;
 
+    // Camera and screen share do not appear in the voice state at all - measured, it
+    // carries only mute and deafen. They arrive as their own events instead.
+    private bool _discordVideo;
+    private bool _discordScreenshare;
+
     /// <summary>
     /// The voice channels of the server you are in, with how many people are in each.
     ///
@@ -1848,6 +1853,8 @@ public partial class MainWindow : Window, IDeckAgent
 
             await _discord.SubscribeAsync("VOICE_SETTINGS_UPDATE");
             await _discord.SubscribeAsync("VOICE_CHANNEL_SELECT");
+            await _discord.SubscribeAsync("VIDEO_STATE_UPDATE");
+            await _discord.SubscribeAsync("SCREENSHARE_STATE_UPDATE");
             await RefreshDiscordStateAsync();
 
             DeckLog.Out("discord", "connected");
@@ -1906,6 +1913,14 @@ public partial class MainWindow : Window, IDeckAgent
 
             // Fires on joining and on leaving. Leaving carries no channel id, which is
             // how the key for the channel you just left knows to go dark.
+            case "VIDEO_STATE_UPDATE":
+                _discordVideo = e.Data?["active"]?.GetValue<bool>() ?? false;
+                break;
+
+            case "SCREENSHARE_STATE_UPDATE":
+                _discordScreenshare = e.Data?["active"]?.GetValue<bool>() ?? false;
+                break;
+
             case "VOICE_CHANNEL_SELECT":
                 _discordChannel = e.Data?["channel_id"]?.GetValue<string>();
 
@@ -2021,6 +2036,8 @@ public partial class MainWindow : Window, IDeckAgent
     {
         DiscordAction.ToggleMute => _discordMuted,
         DiscordAction.ToggleDeafen => _discordDeafened,
+        DiscordAction.ToggleVideo => _discordVideo,
+        DiscordAction.ToggleScreenshare => _discordScreenshare,
         DiscordAction.JoinChannel => _discordChannel is { } id && id == discord.Target,
 
         DiscordAction.ChannelSlot or DiscordAction.CurrentChannel =>

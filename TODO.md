@@ -7,7 +7,11 @@ the AKP153E arrived on 04.08.2026 and everything they gated is measured.
 
 ## Releases
 
-Currently **1.3.0**.
+Currently **1.3.1**, which lights the camera and screen share keys.
+
+Neither appears in the voice state, which carries only mute and deafen. They arrive
+as `VIDEO_STATE_UPDATE` and `SCREENSHARE_STATE_UPDATE`, each carrying `active`, and
+the only way to find that out was to subscribe and watch while somebody clicked.
 
 **1.3.0:**
 
