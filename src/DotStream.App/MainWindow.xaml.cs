@@ -2328,6 +2328,10 @@ public partial class MainWindow : Window, IDeckAgent
         var built = new List<(int Index, object Binding)>();
         var taken = new HashSet<int>();
 
+        // Counted separately from keys that could not be built, because the two need
+        // different answers.
+        int full = 0;
+
         foreach (ProposedKey key in keys)
         {
             object? binding = null;
@@ -2354,14 +2358,34 @@ public partial class MainWindow : Window, IDeckAgent
                 ? wanted
                 : NextFreeKey(target, taken);
 
-            if (index < 0) continue;
+            if (index < 0)
+            {
+                full++;
+                continue;
+            }
 
             taken.Add(index);
             built.Add((index, binding));
         }
 
+        // Two very different failures used to give the same answer. A page with no room
+        // left reported "none of the keys could be understood", which sent whoever read
+        // it looking at their key definitions - and since the page stayed full, every
+        // attempt after it failed the same way and looked like corrupted state.
+        if (built.Count == 0 && full > 0)
+        {
+            string where = target?.Title ?? targetApp?.Name ?? "That page";
+
+            return new AskResult(false, -1, null,
+                $"{where} has no free keys left. Twelve fit alongside Back and the accept "
+                + "and reject keys, so clear one first or propose a new page instead.");
+        }
+
         if (built.Count == 0)
             return new AskResult(false, -1, null, "None of the keys could be understood.");
+
+        if (full > 0)
+            DeckLog.Note("mcp:propose", $"{full} key(s) dropped: no room left on the page");
 
         // One key is an edit, not a page. Show it in the hotkey window with everything
         // the agent chose already filled in, so the combination, label and icon can be

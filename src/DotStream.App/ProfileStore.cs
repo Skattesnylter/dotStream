@@ -187,9 +187,13 @@ public static class ProfileStore
             Directory.CreateDirectory(AppSelectionStore.DirectoryPath);
             File.WriteAllText(FilePath, JsonSerializer.Serialize(record, Options));
         }
-        catch
+        catch (Exception ex)
         {
-            // Non-fatal: the layout simply will not survive a restart.
+            // Non-fatal, but not silent. An empty catch here meant a failed write was
+            // indistinguishable from a successful one: the deck showed the change, the
+            // agent was told "saved", and the layout was gone at the next restart with
+            // nothing anywhere saying why.
+            DeckLog.Note("profile", "could not save the layout: " + ex.Message);
         }
     }
 

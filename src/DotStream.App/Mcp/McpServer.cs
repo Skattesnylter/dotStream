@@ -289,8 +289,10 @@ public sealed class McpServer : IAsyncDisposable
 
         if (keys.Count == 0) return ToolResult(id, "at least one key is required", isError: true);
 
-        // Two keys are reserved for accept and reject while the proposal is on screen.
-        const int maximum = 13;
+        // Three cells carry Later, Accept and Reject while the proposal is on screen,
+        // which leaves twelve of the fifteen. This used to say thirteen, and the
+        // thirteenth was accepted here and then dropped silently further down.
+        const int maximum = 12;
 
         if (keys.Count > maximum)
             return ToolResult(id, $"at most {maximum} keys fit alongside accept and reject", isError: true);
@@ -425,7 +427,9 @@ public sealed class McpServer : IAsyncDisposable
                     ["keys"] = new JsonObject
                     {
                         ["type"] = "array",
-                        ["description"] = "Up to 14, leaving one key for Back.",
+                        ["description"] =
+                            "Up to 12. Three of the fifteen keys carry Later, Accept and "
+                            + "Reject while the proposal is on the deck.",
                         ["items"] = new JsonObject
                         {
                             ["type"] = "object",
