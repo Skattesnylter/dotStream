@@ -114,6 +114,15 @@ public partial class MainWindow : Window, IDeckAgent
     private bool _discordDeafened;
     private string? _discordChannel;
 
+    /// <summary>
+    /// When to next try the applications that are not connected.
+    ///
+    /// Both used to be attempted once at startup, so starting OBS afterwards meant
+    /// dotStream never saw it - the same mistake as calling TryOpen once and never
+    /// looking for the deck again. Pressing a key already retried; nothing else did.
+    /// </summary>
+    private DateTime _integrationsDue = DateTime.MinValue;
+
     // What OBS says is happening, so keys can be lit without asking on every repaint.
     private string? _obsScene;
     private bool _obsRecording;
@@ -1640,6 +1649,23 @@ public partial class MainWindow : Window, IDeckAgent
     };
 
     /// <summary>
+    /// Looks again for applications that were not running last time.
+    ///
+    /// Ten seconds is far below anyone's patience for "I just started OBS, why is it
+    /// not there", and costs one failed connection attempt in the meantime.
+    /// </summary>
+    private async Task RetryIntegrationsAsync()
+    {
+        if (DateTime.UtcNow < _integrationsDue) return;
+        if (_obs.IsConnected && _discord.IsConnected) return;
+
+        _integrationsDue = DateTime.UtcNow.AddSeconds(10);
+
+        if (!_obs.IsConnected) await ConnectObsAsync();
+        if (!_discord.IsConnected) await ConnectDiscordAsync();
+    }
+
+    /// <summary>
     /// Tells an agent what OBS and Discord actually contain.
     ///
     /// Written as prose rather than JSON because the reader is a language model, and
@@ -1648,6 +1674,10 @@ public partial class MainWindow : Window, IDeckAgent
     /// </summary>
     public async Task<string> DescribeIntegrationsAsync()
     {
+        // Somebody asking is a good reason to look now rather than at the next tick.
+        _integrationsDue = DateTime.MinValue;
+        await RetryIntegrationsAsync();
+
         var report = new System.Text.StringBuilder();
 
         // OBS -----------------------------------------------------------------
@@ -3148,6 +3178,7 @@ public partial class MainWindow : Window, IDeckAgent
         if (_controller is null) return;
 
         await RefreshObsThumbnailsAsync();
+        await RetryIntegrationsAsync();
 
         DeckPage? page = _navigator.Current;
 
