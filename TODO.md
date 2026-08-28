@@ -660,6 +660,16 @@ PKCE, one redirect URI pointing at the repository which is never navigated to. T
 belongs in the source when this is built - a public client has no secret to protect,
 and every user sharing one application is the point rather than a compromise.
 
+**The game overlay cannot be driven.** Measured 28.08.2026. `TOGGLE_OVERLAY`,
+`SET_OVERLAY`, `GET_OVERLAY`, `SET_OVERLAY_SETTINGS`, `GET_OVERLAY_SETTINGS` and
+`TOGGLE_GAME_OVERLAY` all answer 4002 "invalid command", the same as a name invented
+on the spot. There is no RPC surface for it.
+
+A hotkey key can still toggle it, since Discord has a global binding for the overlay,
+and anyone can build that today without new code. What cannot be done is the light: we
+would be showing what we think we did last rather than what is true, which is the one
+thing every other key here avoids. Do not add a lit overlay key.
+
 - [ ] Build it: `GET_VOICE_SETTINGS` on connect, subscribe to `VOICE_SETTINGS_UPDATE`,
       and a mute key lit from what Discord reports rather than from what the key last
       did. Same shape as the OBS keys.
