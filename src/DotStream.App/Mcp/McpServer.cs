@@ -275,9 +275,13 @@ public sealed class McpServer : IAsyncDisposable
                     obs = new ProposedObs(action.Trim(), o["target"]?.GetValue<string>()?.Trim() ?? "");
                 }
 
-                // A key needs a label and something to do. Which of the two it is does
-                // not matter here.
-                if (string.IsNullOrWhiteSpace(label)) continue;
+                // A key needs something to do, and a name unless it names itself. The
+                // self-filling Discord keys take their label from whichever channel
+                // they currently point at, so requiring one here rejected exactly the
+                // proposals that were correct.
+                bool namesItself = discord?.Action is "ChannelSlot" or "CurrentChannel";
+
+                if (string.IsNullOrWhiteSpace(label) && !namesItself) continue;
                 if (string.IsNullOrWhiteSpace(hotkey) && obs is null && discord is null) continue;
 
                 int? index = entry?["index"] is { } slot && slot.GetValue<int>() is >= 1 and <= 15
@@ -437,7 +441,10 @@ public sealed class McpServer : IAsyncDisposable
                             ["type"] = "object",
                             ["properties"] = new JsonObject
                             {
-                                ["label"] = Property("string", "A word or two - the key is 85 pixels wide."),
+                                ["label"] = Property("string",
+                                    "A word or two - the key is 100 pixels wide. Optional for the "
+                                    + "self-filling Discord keys, which take the name of whichever "
+                                    + "channel they currently point at."),
                                 ["hotkey"] = Property("string",
                                     "Like \"Ctrl+S\", \"Alt+=\" or \"Ctrl+Shift+L\". Commas make it a "
                                     + "sequence, pressed in order - use this for ribbon commands that "

@@ -242,6 +242,11 @@ server without building a page for each one. Each shows how many people are sitt
 that channel. There is also a key for "the channel I am in right now", which is the
 only thing that works on servers that move you into a channel created on the fly.
 
+This is aimed squarely at one screen. In fullscreen you cannot see Discord at all, and
+alt-tabbing out of a game risks a minimise or a stutter to find out something you could
+have read at a glance. The occupancy counts mean you can see where everyone is, and move
+to them, without leaving the game.
+
 Camera and screen share are there too.
 
 The authorisation is stored in `%APPDATA%\dotStream\discord.dat`, encrypted for your
