@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.IO.Pipes;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -38,7 +38,19 @@ public sealed class DiscordClient : IAsyncDisposable
     /// <summary>Never navigated to. It only has to exist on the application.</summary>
     private const string RedirectUri = "https://github.com/Skattesnylter/dotStream";
 
-    private static readonly string[] Scopes = ["rpc", "rpc.voice.read", "rpc.voice.write"];
+    /// <summary>
+    /// Camera and screen share are here because they are ordinary scopes, which was
+    /// worth measuring rather than assuming: TOGGLE_VIDEO and TOGGLE_SCREENSHARE answer
+    /// 4006 "invalid scope" while a made-up command answers 4002 "invalid command", so
+    /// the commands exist and only the permission was missing.
+    /// </summary>
+    private static readonly string[] Scopes =
+    [
+        "rpc",
+        "rpc.voice.read", "rpc.voice.write",
+        "rpc.video.read", "rpc.video.write",
+        "rpc.screenshare.read", "rpc.screenshare.write",
+    ];
 
     private readonly SemaphoreSlim _send = new(1, 1);
     private readonly Dictionary<string, TaskCompletionSource<JsonNode?>> _pending = [];

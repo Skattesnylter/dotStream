@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -56,13 +56,24 @@ public partial class DiscordWindow : Window
 
     private int IconIndex { get; set; }
 
-    private DiscordAction Selected =>
-        ActionBox.SelectedItem is ComboBoxItem { Tag: string tag } && Enum.TryParse(tag, out DiscordAction action)
-            ? action
-            : DiscordAction.ToggleMute;
+    /// <summary>
+    /// The five slots are one action with a different target, but a person choosing
+    /// from a list wants five entries rather than an action plus a number nobody can
+    /// guess the meaning of.
+    /// </summary>
+    private DiscordAction Selected => SelectedTag switch
+    {
+        ['S', 'l', 'o', 't', _] => DiscordAction.ChannelSlot,
+        string tag when Enum.TryParse(tag, out DiscordAction action) => action,
+        _ => DiscordAction.ToggleMute
+    };
+
+    private string SelectedTag =>
+        ActionBox.SelectedItem is ComboBoxItem { Tag: string tag } ? tag : "";
 
     private async Task ShowActionAsync()
     {
+        // Only a fixed join needs a channel picked; the rest fill themselves.
         bool joining = Selected == DiscordAction.JoinChannel;
         ChannelPanel.Visibility = joining ? Visibility.Visible : Visibility.Collapsed;
 
@@ -161,9 +172,14 @@ public partial class DiscordWindow : Window
             label = channel.Name;
         }
 
+        // A slot's target is which slot it is; a join's target is the channel id.
+        string target = Selected == DiscordAction.ChannelSlot
+            ? SelectedTag[4..]
+            : ChannelBox.SelectedItem is DiscordPlace selected ? selected.Id : Pending;
+
         return new DiscordBinding(Selected, label, Icon)
         {
-            Target = ChannelBox.SelectedItem is DiscordPlace selected ? selected.Id : Pending,
+            Target = target,
             IconFile = IconFile,
             IconIndex = IconIndex
         };

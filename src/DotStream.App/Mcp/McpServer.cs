@@ -480,9 +480,15 @@ public sealed class McpServer : IAsyncDisposable
                                     ["properties"] = new JsonObject
                                     {
                                         ["action"] = Property("string",
-                                            "ToggleMute, ToggleDeafen, LeaveVoice or JoinChannel."),
+                                            "ToggleMute, ToggleDeafen, LeaveVoice, JoinChannel, "
+                                            + "ToggleVideo, ToggleScreenshare, "
+                                            + "ChannelSlot or CurrentChannel. The last two fill "
+                                            + "themselves from whichever server the user is in, so a "
+                                            + "row of ChannelSlot keys follows them between servers "
+                                            + "without a page per server."),
                                         ["target"] = Property("string",
                                             "Voice channel id for JoinChannel, from deck_integrations. "
+                                            + "For ChannelSlot it is the slot number, \"0\" to \"4\". "
                                             + "Not used by the others.")
                                     },
                                     ["required"] = new JsonArray { "action" }

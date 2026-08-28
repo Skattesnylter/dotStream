@@ -113,6 +113,17 @@ public partial class MainWindow : Window, IDeckAgent
     private bool _discordMuted;
     private bool _discordDeafened;
     private string? _discordChannel;
+    private string? _discordGuild;
+
+    /// <summary>
+    /// The voice channels of the server you are in, with how many people are in each.
+    ///
+    /// Refreshed rather than subscribed to. Occupancy changes need a count per channel,
+    /// and Discord answers that per channel, so five calls on a local pipe is cheaper
+    /// and simpler than subscribing to every channel in a server.
+    /// </summary>
+    private IReadOnlyList<DiscordChannelState> _discordChannels = [];
+    private DateTime _discordChannelsDue = DateTime.MinValue;
 
     /// <summary>
     /// When to next try the applications that are not connected.
@@ -1850,6 +1861,7 @@ public partial class MainWindow : Window, IDeckAgent
             // channel has to be stored as deliberately as the presence of one.
             JsonNode? channel = await _discord.CallAsync("GET_SELECTED_VOICE_CHANNEL");
             _discordChannel = channel?["id"]?.GetValue<string>();
+            _discordGuild = channel?["guild_id"]?.GetValue<string>();
         }
         catch (Exception ex)
         {
@@ -1870,6 +1882,11 @@ public partial class MainWindow : Window, IDeckAgent
             // how the key for the channel you just left knows to go dark.
             case "VOICE_CHANNEL_SELECT":
                 _discordChannel = e.Data?["channel_id"]?.GetValue<string>();
+                _discordGuild = e.Data?["guild_id"]?.GetValue<string>();
+
+                // Moving server changes what the self-filling keys should show, so do
+                // not wait for the next poll.
+                _discordChannelsDue = DateTime.MinValue;
                 break;
 
             default:
@@ -1879,11 +1896,113 @@ public partial class MainWindow : Window, IDeckAgent
         RepaintKeys(highPriority: true);
     });
 
+    /// <summary>
+    /// Reads the voice channels of the server you are in, and how full each one is.
+    ///
+    /// Only while a page in view has keys that need it, and only every few seconds. A
+    /// count is one call per channel, which is nothing on a local pipe but adds up if
+    /// it runs for a server nobody is looking at.
+    /// </summary>
+    private async Task RefreshDiscordChannelsAsync()
+    {
+        if (!_discord.IsConnected) return;
+        if (DateTime.UtcNow < _discordChannelsDue) return;
+
+        bool wanted = (_navigator.Current?.Cells.Values ?? Enumerable.Empty<DeckButton>())
+            .Any(b => b.Tag is DiscordBinding
+                { Action: DiscordAction.ChannelSlot or DiscordAction.CurrentChannel });
+
+        if (!wanted) return;
+
+        _discordChannelsDue = DateTime.UtcNow.AddSeconds(4);
+
+        if (_discordGuild is null)
+        {
+            // Not in a server: the slots have nothing to show, which is a state worth
+            // storing rather than leaving the last server's channels on screen.
+            if (_discordChannels.Count > 0)
+            {
+                _discordChannels = [];
+                RepaintKeys(highPriority: false);
+            }
+
+            return;
+        }
+
+        try
+        {
+            JsonNode? channels = await _discord.CallAsync(
+                "GET_CHANNELS", new JsonObject { ["guild_id"] = _discordGuild });
+
+            if (channels?["channels"] is not JsonArray list) return;
+
+            var found = new List<DiscordChannelState>();
+
+            foreach (JsonNode? channel in list)
+            {
+                if (channel?["type"]?.GetValue<int>() != 2) continue;
+
+                string? id = channel["id"]?.GetValue<string>();
+                string? name = channel["name"]?.GetValue<string>();
+                if (id is null || name is null) continue;
+
+                int people = 0;
+
+                // GET_CHANNELS does not carry occupancy; GET_CHANNEL does.
+                try
+                {
+                    JsonNode? detail = await _discord.CallAsync(
+                        "GET_CHANNEL", new JsonObject { ["channel_id"] = id });
+
+                    people = (detail?["voice_states"] as JsonArray)?.Count ?? 0;
+                }
+                catch (Exception) { /* a channel can vanish between the two calls */ }
+
+                found.Add(new DiscordChannelState(id, name, people));
+
+                // Five slots is the row; reading the rest would be work nobody sees.
+                if (found.Count >= 8) break;
+            }
+
+            _discordChannels = found;
+            RepaintKeys(highPriority: false);
+        }
+        catch (Exception ex)
+        {
+            DeckLog.Note("discord", "channel refresh failed: " + ex.Message);
+        }
+    }
+
+    /// <summary>Which channel a self-filling key currently points at, if any.</summary>
+    private DiscordChannelState? ResolveChannel(DiscordBinding discord)
+    {
+        switch (discord.Action)
+        {
+            case DiscordAction.ChannelSlot:
+                return int.TryParse(discord.Target, out int slot) && slot >= 0 && slot < _discordChannels.Count
+                    ? _discordChannels[slot]
+                    : null;
+
+            case DiscordAction.CurrentChannel:
+                return _discordChannel is { } id
+                    ? _discordChannels.FirstOrDefault(c => c.Id == id)
+                      ?? new DiscordChannelState(id, "Here", 0)
+                    : null;
+
+            default:
+                return null;
+        }
+    }
+
     private bool IsDiscordActive(DiscordBinding discord) => discord.Action switch
     {
         DiscordAction.ToggleMute => _discordMuted,
         DiscordAction.ToggleDeafen => _discordDeafened,
         DiscordAction.JoinChannel => _discordChannel is { } id && id == discord.Target,
+
+        DiscordAction.ChannelSlot or DiscordAction.CurrentChannel =>
+            ResolveChannel(discord) is { } resolved && resolved.Id == _discordChannel,
+
         _ => false
     };
 
@@ -1901,6 +2020,43 @@ public partial class MainWindow : Window, IDeckAgent
         Visual = () =>
         {
             bool active = _discord.IsConnected && IsDiscordActive(discord);
+
+            // The self-filling keys draw themselves from whatever they resolve to now,
+            // which is a channel name and how many people are sitting in it.
+            if (discord.Action is DiscordAction.ChannelSlot or DiscordAction.CurrentChannel)
+            {
+                DiscordChannelState? channel = _discord.IsConnected ? ResolveChannel(discord) : null;
+
+                if (channel is null)
+                {
+                    // Nothing to point at: in no server, or a slot past the end of the
+                    // list. Blank rather than a stale name from the last server.
+                    return new CellVisual
+                    {
+                        Background = Color.FromRgb(0x0B, 0x0C, 0x12),
+                        Label = "",
+                        Dimmed = true
+                    };
+                }
+
+                return new CellVisual
+                {
+                    Background = active ? Color.FromRgb(0x1C, 0x2A, 0x4A) : Color.FromRgb(0x14, 0x16, 0x22),
+                    BackgroundGradientTo = active ? Color.FromRgb(0x10, 0x18, 0x2E) : Color.FromRgb(0x0A, 0x0B, 0x11),
+
+                    // The count is the thing you look for across a desk: is anyone in
+                    // there. An empty channel shows nothing rather than a zero.
+                    BigText = channel.People > 0 ? channel.People.ToString() : null,
+                    BigTextColor = active ? Color.FromRgb(0x9E, 0xC6, 0xFF) : Color.FromRgb(0x8E, 0x9B, 0xF0),
+                    BigTextScale = 0.85,
+
+                    Label = channel.Name,
+                    LabelColor = active ? Colors.White : Color.FromRgb(0xC8, 0xCC, 0xE0),
+                    LabelSize = _textLab.LabelSize,
+                    LabelPosition = LabelPosition.Bottom,
+                    ReservedLabelLines = 1
+                };
+            }
 
             // Muted is the state worth seeing across a room, so it is the loud one.
             var visual = new CellVisual
@@ -1936,13 +2092,26 @@ public partial class MainWindow : Window, IDeckAgent
                 }
             }
 
-            (string command, JsonObject? args) = discord.Request(_discordMuted, _discordDeafened);
+            DiscordBinding effective = discord;
+
+            if (discord.Action is DiscordAction.ChannelSlot or DiscordAction.CurrentChannel)
+            {
+                if (ResolveChannel(discord) is not { } channel)
+                {
+                    StatusLabel.Text = "That key has no channel to point at right now.";
+                    return;
+                }
+
+                effective = discord with { Target = channel.Id };
+            }
+
+            (string command, JsonObject? args) = effective.Request(_discordMuted, _discordDeafened);
 
             try
             {
                 await _discord.CallAsync(command, args);
                 DeckLog.Out("discord", command + (args is null ? "" : "  " + args.ToJsonString()));
-                StatusLabel.Text = discord.Describe();
+                StatusLabel.Text = effective.Describe();
             }
             catch (Exception ex)
             {
@@ -3178,6 +3347,7 @@ public partial class MainWindow : Window, IDeckAgent
         if (_controller is null) return;
 
         await RefreshObsThumbnailsAsync();
+        await RefreshDiscordChannelsAsync();
         await RetryIntegrationsAsync();
 
         DeckPage? page = _navigator.Current;

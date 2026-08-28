@@ -19,6 +19,14 @@
             <ComboBoxItem Content="Deafen and undeafen" Tag="ToggleDeafen" />
             <ComboBoxItem Content="Leave the voice channel" Tag="LeaveVoice" />
             <ComboBoxItem Content="Join a voice channel" Tag="JoinChannel" />
+            <ComboBoxItem Content="Camera on and off" Tag="ToggleVideo" />
+            <ComboBoxItem Content="Share screen on and off" Tag="ToggleScreenshare" />
+            <ComboBoxItem Content="Channel slot 1 of the server you are in" Tag="Slot0" />
+            <ComboBoxItem Content="Channel slot 2" Tag="Slot1" />
+            <ComboBoxItem Content="Channel slot 3" Tag="Slot2" />
+            <ComboBoxItem Content="Channel slot 4" Tag="Slot3" />
+            <ComboBoxItem Content="Channel slot 5" Tag="Slot4" />
+            <ComboBoxItem Content="The channel you are in right now" Tag="CurrentChannel" />
         </ComboBox>
 
         <StackPanel x:Name="ChannelPanel" Visibility="Collapsed">

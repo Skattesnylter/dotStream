@@ -215,8 +215,17 @@ a single scene name.
 
 ### Discord
 
-Nothing to switch on. If Discord is running, dotStream connects to it, and the first
-time it does Discord asks you to approve dotStream once. After that it is silent.
+**Discord will ask your permission once.** The first time dotStream connects, Discord
+shows an authorisation prompt with dotStream's name on it. Approve it and you will not
+see it again: a token is stored on your machine and renews itself.
+
+That prompt is the security model, not an obstacle. dotStream can only reach the
+account of whoever said yes, on the machine where they said it. There is no server in
+the middle and no credential shipped in the download, because Discord supports PKCE
+for desktop applications. If a future version needs a permission it does not have yet,
+you will be asked again, once.
+
+Nothing else to switch on. If Discord is running, dotStream connects to it.
 
 **The keys are lit from Discord, not from themselves.** Mute yourself by clicking in
 Discord and the key follows. That is the whole reason this does not use the keyboard
@@ -226,6 +235,14 @@ afterwards.
 
 Deafen turns off the microphone as well, because that is what Discord does. Both keys
 light up together.
+
+**Voice channel keys can fill themselves.** A key can be bound to a named channel, or
+to "slot 1 of whichever server I am in", so a row of five follows you from server to
+server without building a page for each one. Each shows how many people are sitting in
+that channel. There is also a key for "the channel I am in right now", which is the
+only thing that works on servers that move you into a channel created on the fly.
+
+Camera and screen share are there too.
 
 The authorisation is stored in `%APPDATA%\dotStream\discord.dat`, encrypted for your
 Windows account. It is the only credential dotStream keeps, and the only file here

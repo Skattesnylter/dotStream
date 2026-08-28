@@ -11,6 +11,26 @@ public enum DiscordAction
     ToggleDeafen,
     LeaveVoice,
     JoinChannel,
+
+    /// <summary>
+    /// The nth voice channel of whichever server you are currently in.
+    ///
+    /// Fills itself. A row of these follows you from server to server without anybody
+    /// building a page per server, which is the difference between a deck you set up
+    /// once and one you keep maintaining.
+    /// </summary>
+    ToggleVideo,
+    ToggleScreenshare,
+
+    ChannelSlot,
+
+    /// <summary>
+    /// Whatever channel you are in right now.
+    ///
+    /// For servers that move you into a channel created on the fly, where there is
+    /// nothing to bind to in advance because it did not exist yet.
+    /// </summary>
+    CurrentChannel,
 }
 
 /// <summary>
@@ -44,6 +64,10 @@ public sealed record DiscordBinding(DiscordAction Action, string Label = "", str
             DiscordAction.ToggleDeafen => "Deafen",
             DiscordAction.LeaveVoice => "Leave",
             DiscordAction.JoinChannel => "Channel",
+            DiscordAction.ToggleVideo => "Camera",
+            DiscordAction.ToggleScreenshare => "Share",
+            DiscordAction.ChannelSlot => "",
+            DiscordAction.CurrentChannel => "",
             _ => "Discord"
         };
 
@@ -60,6 +84,10 @@ public sealed record DiscordBinding(DiscordAction Action, string Label = "", str
             // channel. Text channels get a hash there; borrowing the convention means
             // nobody has to learn ours.
             DiscordAction.JoinChannel => "volume-up",
+            DiscordAction.ToggleVideo => "camera",
+            DiscordAction.ToggleScreenshare => "screenshot",
+            DiscordAction.ChannelSlot => "volume-up",
+            DiscordAction.CurrentChannel => "volume-down",
 
             _ => "person"
         });
@@ -91,6 +119,16 @@ public sealed record DiscordBinding(DiscordAction Action, string Label = "", str
         DiscordAction.JoinChannel =>
             ("SELECT_VOICE_CHANNEL", new JsonObject { ["channel_id"] = Target, ["force"] = true }),
 
+        // The caller resolves which channel a slot currently points at and passes it in
+        // as Target, so from here these behave like any other join.
+        DiscordAction.ChannelSlot or DiscordAction.CurrentChannel =>
+            ("SELECT_VOICE_CHANNEL", new JsonObject { ["channel_id"] = Target, ["force"] = true }),
+
+        // Undocumented, and confirmed to exist by the error they give without the
+        // scope: 4006 invalid scope, where a command that does not exist gives 4002.
+        DiscordAction.ToggleVideo => ("TOGGLE_VIDEO", null),
+        DiscordAction.ToggleScreenshare => ("TOGGLE_SCREENSHARE", null),
+
         _ => ("GET_VOICE_SETTINGS", null)
     };
 
@@ -100,6 +138,13 @@ public sealed record DiscordBinding(DiscordAction Action, string Label = "", str
         DiscordAction.ToggleDeafen => "Discord deafen",
         DiscordAction.LeaveVoice => "left the voice channel",
         DiscordAction.JoinChannel => $"joined {(Label.Length > 0 ? Label : "the channel")}",
+        DiscordAction.ToggleVideo => "Discord camera",
+        DiscordAction.ToggleScreenshare => "Discord screen share",
+        DiscordAction.ChannelSlot => "joined that channel",
+        DiscordAction.CurrentChannel => "already here",
         _ => "Discord"
     };
 }
+
+/// <summary>One voice channel and how many people are sitting in it.</summary>
+public sealed record DiscordChannelState(string Id, string Name, int People);
