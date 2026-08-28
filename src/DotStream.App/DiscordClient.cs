@@ -153,6 +153,14 @@ public sealed class DiscordClient : IAsyncDisposable
             IsAuthenticated = true;
             return true;
         }
+        catch (OperationCanceledException)
+        {
+            // The read loop died while this was in flight, so every waiter was
+            // cancelled. Saying "token rejected" here sent me looking at the token
+            // twice when the connection was the thing that broke.
+            DeckLog.Note("discord", "connection dropped before the token was checked");
+            return false;
+        }
         catch (Exception ex)
         {
             DeckLog.Note("discord", "token rejected: " + ex.Message);
