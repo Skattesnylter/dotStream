@@ -461,6 +461,29 @@ Still open — **Thomas is thinking about these two**:
   own machine and their own key, but it deserves a deliberate decision rather than
   arriving as a side effect.
 
+## 5b. Open from the work laptop, 28.08.2026
+
+An agent on a second machine tested 1.2.0 over MCP and reported seven bugs. Three
+were real, three were symptoms with the wrong cause attached, and one needs that
+machine to settle.
+
+Worth keeping as a reminder of how to read a report like that. Every symptom was
+real; the diagnoses guessed. "Font atlas lacks a Unicode range" - there is no font
+atlas. "Number-key parsing differs between paths" - both go through the same line.
+"Corrupt state after a failed merge" - the page was simply full.
+
+- [x] Proposal error message lied about a full page, which accounted for two of the
+      seven reports on its own.
+- [x] Key limit was three different numbers. Twelve now, everywhere.
+- [x] `ProfileStore.Save` swallowed failures silently.
+- [x] OBS and Discord keys were offered on every page rather than their own.
+- [ ] **New pages and target_page merges reported as saved but absent after restart.**
+      Not reproducible here: verified on 27.08 that both paths write to `profile.json`
+      and read back. Since saving now logs its failures, repeat it on the work laptop
+      and look in View > Console for a line from `profile`. If the write is failing
+      there, the reason will say so - a roaming profile or a synced `%APPDATA%` are
+      the obvious suspects on a managed machine.
+
 ## 6. Editor polish
 
 - [ ] Per-key **background colour and custom icon file** — the same colour editor the
