@@ -73,6 +73,15 @@ public interface IDeckAgent
     /// </summary>
     Task<string> DescribeIntegrationsAsync();
 
+    /// <summary>
+    /// Puts an application's page back to the layout dotStream ships with.
+    ///
+    /// Offered over MCP as well as in the menu because the assistant that filled a page
+    /// with something unwanted should be able to offer to undo it, rather than leaving
+    /// the user to work out which keys were theirs.
+    /// </summary>
+    Task<string> ResetPageAsync(string page);
+
     /// <summary>Shows a short message on an info cell for a few seconds.</summary>
     void Notify(string text, int? cell, Color? colour);
 

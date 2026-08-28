@@ -204,6 +204,7 @@ public sealed class McpServer : IAsyncDisposable
                 "deck_propose_page" => await ProposePageAsync(arguments, id),
                 "deck_status" => Status(id),
                 "deck_integrations" => ToolResult(id, await _agent.DescribeIntegrationsAsync()),
+                "deck_reset_page" => await ResetPageAsync(arguments, id),
                 _ => Error(id, -32602, $"Unknown tool '{name}'")
             };
         }
@@ -519,6 +520,21 @@ public sealed class McpServer : IAsyncDisposable
             "following the focused app, and what is playing.",
             new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() }),
 
+        Tool("deck_reset_page",
+            "Put an application's page back to the layout dotStream ships with. "
+            + "Currently \"Discord\" or \"OBS\". Everything else on that page is left "
+            + "alone. Ask the user before calling this: it replaces keys they may have "
+            + "arranged themselves.",
+            new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["page"] = Property("string", "\"Discord\" or \"OBS\".")
+                },
+                ["required"] = new JsonArray { "page" }
+            }),
+
         Tool("deck_integrations",
             "What the connected applications offer, by name: OBS scenes and audio "
             + "sources, Discord servers and voice channels. Call this before proposing "
@@ -527,6 +543,19 @@ public sealed class McpServer : IAsyncDisposable
             + "running, in which case do not propose keys for it.",
             new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() })
     ];
+
+    private async Task<string> ResetPageAsync(JsonNode? arguments, JsonNode? id)
+    {
+        string page = arguments?["page"]?.GetValue<string>()?.Trim() ?? "";
+
+        if (page.Length == 0) return ToolResult(id, "page is required", isError: true);
+
+        string outcome = await _agent.ResetPageAsync(page);
+
+        // The agent says what it could not do in the same sentence it would use for
+        // success, so an unknown name becomes an error the model can read.
+        return ToolResult(id, outcome, isError: outcome.StartsWith("No default", StringComparison.Ordinal));
+    }
 
     private static JsonObject Tool(string name, string description, JsonObject schema) => new()
     {

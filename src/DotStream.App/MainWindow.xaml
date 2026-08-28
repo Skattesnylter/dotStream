@@ -38,6 +38,8 @@
                           IsCheckable="True" Click="OnToggleStartWithWindows"
                           ToolTip="Runs dotStream in the tray when you sign in, so the deck is live without starting anything." />
                 <Separator />
+                <MenuItem x:Name="DefaultPagesMenu" Header="_Default keys for..."
+                          ToolTip="Put an application's page back to the layout dotStream ships with. Anything on the other cells is left alone." />
                 <MenuItem Header="Reset deck _layout..." Click="OnResetLayout" />
                 <Separator />
                 <MenuItem Header="_Hide to tray" Click="OnHideToTray" InputGestureText="Alt+F4" />

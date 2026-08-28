@@ -268,6 +268,7 @@ public partial class MainWindow : Window, IDeckAgent
         StartWithWindowsMenuItem.IsChecked = StartWithWindows.IsEnabled;
 
         BuildPinMenu();
+        BuildDefaultsMenu();
 
         UpdateMcpMenuItem();
         if (_settings.McpEnabled) StartMcp(announce: false);
@@ -1884,7 +1885,9 @@ public partial class MainWindow : Window, IDeckAgent
             // channel has to be stored as deliberately as the presence of one.
             JsonNode? channel = await _discord.CallAsync("GET_SELECTED_VOICE_CHANNEL");
             _discordChannel = channel?["id"]?.GetValue<string>();
-            _discordGuild = channel?["guild_id"]?.GetValue<string>();
+
+            if (channel?["guild_id"]?.GetValue<string>() is { Length: > 0 } guild)
+                _discordGuild = guild;
         }
         catch (Exception ex)
         {
@@ -1905,7 +1908,13 @@ public partial class MainWindow : Window, IDeckAgent
             // how the key for the channel you just left knows to go dark.
             case "VOICE_CHANNEL_SELECT":
                 _discordChannel = e.Data?["channel_id"]?.GetValue<string>();
-                _discordGuild = e.Data?["guild_id"]?.GetValue<string>();
+
+                // Only on the way in. Leaving a channel reports no guild, and clearing
+                // the server on that emptied the whole row - but the server is still
+                // there and its channels are still where you might go next. The row
+                // should change when you arrive somewhere else, not when you hang up.
+                if (e.Data?["guild_id"]?.GetValue<string>() is { Length: > 0 } guild)
+                    _discordGuild = guild;
 
                 // Moving server changes what the self-filling keys should show, so do
                 // not wait for the next poll.
@@ -1939,18 +1948,9 @@ public partial class MainWindow : Window, IDeckAgent
 
         _discordChannelsDue = DateTime.UtcNow.AddSeconds(4);
 
-        if (_discordGuild is null)
-        {
-            // Not in a server: the slots have nothing to show, which is a state worth
-            // storing rather than leaving the last server's channels on screen.
-            if (_discordChannels.Count > 0)
-            {
-                _discordChannels = [];
-                RepaintKeys(highPriority: false);
-            }
-
-            return;
-        }
+        // No server has ever been seen this session, so there is nothing to show yet.
+        // A server once known is kept: see the comment on VOICE_CHANNEL_SELECT.
+        if (_discordGuild is null) return;
 
         try
         {
@@ -2062,16 +2062,14 @@ public partial class MainWindow : Window, IDeckAgent
                     };
                 }
 
-                return new CellVisual
+                // Muted red for the one you are in, blue for the ones you could go to.
+                // Two meanings that a glance has to separate, so they get different
+                // hues rather than two shades of the same one - and it agrees with the
+                // mute key, where red already means this is switched on right now.
+                var slot = new CellVisual
                 {
-                    Background = active ? Color.FromRgb(0x1C, 0x2A, 0x4A) : Color.FromRgb(0x14, 0x16, 0x22),
-                    BackgroundGradientTo = active ? Color.FromRgb(0x10, 0x18, 0x2E) : Color.FromRgb(0x0A, 0x0B, 0x11),
-
-                    // The count is the thing you look for across a desk: is anyone in
-                    // there. An empty channel shows nothing rather than a zero.
-                    BigText = channel.People > 0 ? channel.People.ToString() : null,
-                    BigTextColor = active ? Color.FromRgb(0x9E, 0xC6, 0xFF) : Color.FromRgb(0x8E, 0x9B, 0xF0),
-                    BigTextScale = 0.85,
+                    Background = active ? Color.FromRgb(0x3A, 0x1E, 0x24) : Color.FromRgb(0x14, 0x16, 0x22),
+                    BackgroundGradientTo = active ? Color.FromRgb(0x24, 0x11, 0x16) : Color.FromRgb(0x0A, 0x0B, 0x11),
 
                     Label = channel.Name,
                     LabelColor = active ? Colors.White : Color.FromRgb(0xC8, 0xCC, 0xE0),
@@ -2079,6 +2077,31 @@ public partial class MainWindow : Window, IDeckAgent
                     LabelPosition = LabelPosition.Bottom,
                     ReservedLabelLines = 1
                 };
+
+                Color tone = active ? Color.FromRgb(0xE8, 0x92, 0x9E) : Color.FromRgb(0x8E, 0x9B, 0xF0);
+
+                // The count and the speaker want the same middle of the cell, so they
+                // take turns. Empty channels all look alike and recede; the ones with
+                // people in them carry a number, which is the thing being looked for.
+                //
+                // A "1" on the channel you are standing in is you, which the colour has
+                // already said. Show the speaker there instead, so a number on your own
+                // channel always means somebody else turned up.
+                bool onlyYou = active && channel.People <= 1;
+
+                if (channel.People > 0 && !onlyYou)
+                {
+                    return slot with
+                    {
+                        BigText = channel.People.ToString(),
+                        BigTextColor = tone,
+                        BigTextScale = 0.85
+                    };
+                }
+
+                return IconLibrary.ByName("volume-up") is { } speaker
+                    ? speaker.ApplyTo(slot, tone)
+                    : slot;
             }
 
             // Muted is the state worth seeing across a room, so it is the loud one.
@@ -2142,6 +2165,97 @@ public partial class MainWindow : Window, IDeckAgent
                 StatusLabel.Text = "Discord did not accept that: " + ex.Message;
             }
         }
+    };
+
+    /// <summary>
+    /// One entry per application that has a shipped layout.
+    ///
+    /// Built from the same list MCP uses, so adding an integration adds its menu entry
+    /// without anybody having to remember to.
+    /// </summary>
+    private void BuildDefaultsMenu()
+    {
+        DefaultPagesMenu.Items.Clear();
+
+        foreach (string name in IntegrationDefaults.Names)
+        {
+            var item = new MenuItem { Header = name };
+
+            item.Click += async (_, _) =>
+            {
+                MessageBoxResult answer = MessageBox.Show(
+                    $"Replace the {name} keys with the ones dotStream ships with?"
+                    + Environment.NewLine + Environment.NewLine
+                    + "Anything you put on the other cells of that page stays.",
+                    "Default keys", MessageBoxButton.OKCancel, MessageBoxImage.Question,
+                    MessageBoxResult.Cancel);
+
+                if (answer == MessageBoxResult.OK) await ResetPageAsync(name);
+            };
+
+            DefaultPagesMenu.Items.Add(item);
+        }
+    }
+
+    /// <summary>
+    /// Puts an application's page back to the shipped layout.
+    ///
+    /// Only touches the cells the default names. A widget in column five, or a key
+    /// somebody put on a free slot, is theirs and stays - resetting the Discord keys
+    /// should not cost you the clock.
+    /// </summary>
+    public Task<string> ResetPageAsync(string name) => Dispatcher.InvokeAsync(() =>
+    {
+        if (IntegrationDefaults.For(name) is not { } layout)
+            return $"No default layout for \"{name}\". There are defaults for {string.Join(" and ", IntegrationDefaults.Names)}.";
+
+        InstalledApp? app = FindApp(name);
+        string pageId = app is not null ? "app:" + app.AppUserModelId : "page:" + name;
+
+        if (!_pages.TryGetValue(pageId, out DeckPage? page))
+        {
+            page = new DeckPage { Id = pageId, Title = app?.Name ?? name };
+
+            if (_catalog?.ById("nav.back") is { } back)
+                page.SetAt(2, 0, back.Create(_navigator));
+
+            _pages[pageId] = page;
+        }
+
+        foreach (IntegrationDefaults.Key key in layout)
+        {
+            page.Set(key.Index, key.Binding switch
+            {
+                DiscordBinding discord => BuildDiscordButton(discord),
+                ObsBinding obs => BuildObsButton(obs),
+                _ => throw new InvalidOperationException("Unknown default binding.")
+            });
+        }
+
+        SaveProfile();
+
+        _controller?.InvalidateAll();
+        RepaintKeys(highPriority: true);
+
+        StatusLabel.Text = $"{page.Title ?? name} is back to its default keys.";
+        DeckLog.Note("defaults", $"{page.Title ?? name} reset to {layout.Count} default keys");
+
+        return $"The {page.Title ?? name} page is back to its {layout.Count} default keys. "
+               + "Anything on the other cells was left alone.";
+    }).Task;
+
+    /// <summary>What to call an existing key when warning that it is about to go.</summary>
+    private static string DescribeKey(DeckButton button) => button.Tag switch
+    {
+        InstalledApp app => app.Name,
+        HotkeyBinding hotkey => hotkey.DisplayLabel,
+        TextMacroBinding macro => macro.DisplayLabel,
+        RunBinding run => run.DisplayLabel,
+        LinkBinding link => link.DisplayLabel,
+        ObsBinding obs => obs.DisplayLabel,
+        DiscordBinding discord => discord.DisplayLabel,
+        string id => id,
+        _ => "a key"
     };
 
     /// <summary>
@@ -2767,6 +2881,18 @@ public partial class MainWindow : Window, IDeckAgent
         if (built.Count == 0)
             return new AskResult(false, -1, null, "None of the keys could be understood.");
 
+        // What this proposal would replace. Accepting shows what arrives; nothing said
+        // what left, so a key somebody set up by hand could be quietly overwritten by
+        // an agent that picked the same index.
+        DeckPage? existing = target ?? (targetApp is not null && _pages.TryGetValue(
+            "app:" + targetApp.AppUserModelId, out DeckPage? found) ? found : null);
+
+        List<string> replacing = existing is null
+            ? []
+            : [.. built
+                .Where(b => existing.Get(b.Index) is not null)
+                .Select(b => DescribeKey(existing.Get(b.Index)!))];
+
         if (full > 0)
             DeckLog.Note("mcp:propose", $"{full} key(s) dropped: no room left on the page");
 
@@ -2803,8 +2929,13 @@ public partial class MainWindow : Window, IDeckAgent
             _navigator.SwitchTo(preview);
             Pin();
 
-            DeckLog.In("mcp:propose", $"{pageName}: {built.Count} keys awaiting approval");
-            StatusLabel.Text = $"An agent proposes a \"{pageName}\" page with {built.Count} keys. Accept or reject on the deck.";
+            DeckLog.In("mcp:propose", $"{pageName}: {built.Count} keys awaiting approval"
+                                       + (replacing.Count > 0 ? $", replacing {string.Join(", ", replacing)}" : ""));
+
+            StatusLabel.Text = replacing.Count == 0
+                ? $"An agent proposes a \"{pageName}\" page with {built.Count} keys. Accept or reject on the deck."
+                : $"An agent proposes {built.Count} keys for \"{pageName}\", replacing {string.Join(", ", replacing)}. "
+                  + "Accept or reject on the deck.";
         });
 
         Task finished = await Task.WhenAny(pending, Task.Delay(timeout));
