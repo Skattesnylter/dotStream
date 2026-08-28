@@ -112,6 +112,7 @@ public partial class MainWindow : Window, IDeckAgent
     // from what the key last did.
     private bool _discordMuted;
     private bool _discordDeafened;
+    private string? _discordChannel;
 
     // What OBS says is happening, so keys can be lit without asking on every repaint.
     private string? _obsScene;
@@ -1638,6 +1639,126 @@ public partial class MainWindow : Window, IDeckAgent
         _ => false
     };
 
+    /// <summary>
+    /// Tells an agent what OBS and Discord actually contain.
+    ///
+    /// Written as prose rather than JSON because the reader is a language model, and
+    /// because it can then say why something is missing. "OBS is not running" is more
+    /// useful than an empty array, which reads as "OBS has no scenes".
+    /// </summary>
+    public async Task<string> DescribeIntegrationsAsync()
+    {
+        var report = new System.Text.StringBuilder();
+
+        // OBS -----------------------------------------------------------------
+        if (!_obs.IsConnected)
+        {
+            report.AppendLine("OBS: not connected. Either it is not running, or its websocket "
+                              + "server is off in Tools > WebSocket Server Settings. Do not propose OBS keys.");
+        }
+        else
+        {
+            try
+            {
+                JsonNode? scenes = await _obs.CallAsync("GetSceneList");
+                JsonNode? inputs = await _obs.CallAsync("GetInputList");
+
+                report.AppendLine("OBS: connected.");
+                report.AppendLine("  current scene: " + (scenes?["currentProgramSceneName"]?.GetValue<string>() ?? "?"));
+
+                if (scenes?["scenes"] is JsonArray list && list.Count > 0)
+                {
+                    report.AppendLine("  scenes (use the name as target for SwitchScene):");
+
+                    // OBS lists these bottom-up relative to its own interface.
+                    foreach (JsonNode? scene in list.Reverse())
+                        if (scene?["sceneName"]?.GetValue<string>() is { } name)
+                            report.AppendLine("    " + name);
+                }
+
+                if (inputs?["inputs"] is JsonArray all)
+                {
+                    var audio = all
+                        .Where(i => (i?["inputKind"]?.GetValue<string>() ?? "")
+                            .Contains("wasapi", StringComparison.OrdinalIgnoreCase))
+                        .Select(i => i!["inputName"]?.GetValue<string>())
+                        .Where(n => n is not null)
+                        .ToList();
+
+                    if (audio.Count > 0)
+                    {
+                        report.AppendLine("  audio sources (use the name as target for ToggleMute):");
+                        foreach (string? name in audio) report.AppendLine("    " + name);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                report.AppendLine("OBS: connected but would not answer: " + ex.Message);
+            }
+        }
+
+        report.AppendLine();
+
+        // Discord --------------------------------------------------------------
+        if (!_discord.IsConnected)
+        {
+            report.AppendLine("Discord: not connected. It is not running, or dotStream has not been "
+                              + "authorised yet. Do not propose Discord keys.");
+        }
+        else
+        {
+            try
+            {
+                report.AppendLine("Discord: connected.");
+                report.AppendLine("  currently muted: " + _discordMuted + ", deafened: " + _discordDeafened);
+                report.AppendLine("  in voice channel: " + (_discordChannel ?? "none"));
+
+                JsonNode? guilds = await _discord.CallAsync("GET_GUILDS");
+
+                if (guilds?["guilds"] is JsonArray servers)
+                {
+                    report.AppendLine($"  servers: {servers.Count}. Voice channels below, with the id to "
+                                      + "use as target for JoinChannel:");
+
+                    // Every server would be a wall of text on an account with dozens,
+                    // and a proposal only ever needs a handful. The user can ask for a
+                    // specific server by name if theirs is not here.
+                    foreach (JsonNode? server in servers.Take(8))
+                    {
+                        string? id = server?["id"]?.GetValue<string>();
+                        string? name = server?["name"]?.GetValue<string>();
+                        if (id is null) continue;
+
+                        report.AppendLine("    " + name);
+
+                        JsonNode? channels = await _discord.CallAsync(
+                            "GET_CHANNELS", new JsonObject { ["guild_id"] = id });
+
+                        if (channels?["channels"] is not JsonArray list) continue;
+
+                        foreach (JsonNode? channel in list)
+                        {
+                            if (channel?["type"]?.GetValue<int>() != 2) continue;
+
+                            report.AppendLine($"      {channel["name"]?.GetValue<string>()}"
+                                              + $"   id={channel["id"]?.GetValue<string>()}");
+                        }
+                    }
+
+                    if (servers.Count > 8)
+                        report.AppendLine($"    ... and {servers.Count - 8} more servers, not listed.");
+                }
+            }
+            catch (Exception ex)
+            {
+                report.AppendLine("Discord: connected but would not answer: " + ex.Message);
+            }
+        }
+
+        return report.ToString().TrimEnd();
+    }
+
     // ------------------------------------------------------------------ Discord
 
     /// <summary>
@@ -1665,6 +1786,7 @@ public partial class MainWindow : Window, IDeckAgent
             });
 
             await _discord.SubscribeAsync("VOICE_SETTINGS_UPDATE");
+            await _discord.SubscribeAsync("VOICE_CHANNEL_SELECT");
             await RefreshDiscordStateAsync();
 
             DeckLog.Out("discord", "connected");
@@ -1693,6 +1815,11 @@ public partial class MainWindow : Window, IDeckAgent
                 _discordMuted = voice["mute"]?.GetValue<bool>() ?? false;
                 _discordDeafened = voice["deaf"]?.GetValue<bool>() ?? false;
             }
+
+            // Null is a valid answer here and means not in a call, so the absence of a
+            // channel has to be stored as deliberately as the presence of one.
+            JsonNode? channel = await _discord.CallAsync("GET_SELECTED_VOICE_CHANNEL");
+            _discordChannel = channel?["id"]?.GetValue<string>();
         }
         catch (Exception ex)
         {
@@ -1702,10 +1829,22 @@ public partial class MainWindow : Window, IDeckAgent
 
     private void OnDiscordEvent(object? sender, DiscordEventArgs e) => Dispatcher.Invoke(() =>
     {
-        if (e.Name != "VOICE_SETTINGS_UPDATE") return;
+        switch (e.Name)
+        {
+            case "VOICE_SETTINGS_UPDATE":
+                _discordMuted = e.Data?["mute"]?.GetValue<bool>() ?? _discordMuted;
+                _discordDeafened = e.Data?["deaf"]?.GetValue<bool>() ?? _discordDeafened;
+                break;
 
-        _discordMuted = e.Data?["mute"]?.GetValue<bool>() ?? _discordMuted;
-        _discordDeafened = e.Data?["deaf"]?.GetValue<bool>() ?? _discordDeafened;
+            // Fires on joining and on leaving. Leaving carries no channel id, which is
+            // how the key for the channel you just left knows to go dark.
+            case "VOICE_CHANNEL_SELECT":
+                _discordChannel = e.Data?["channel_id"]?.GetValue<string>();
+                break;
+
+            default:
+                return;
+        }
 
         RepaintKeys(highPriority: true);
     });
@@ -1714,12 +1853,13 @@ public partial class MainWindow : Window, IDeckAgent
     {
         DiscordAction.ToggleMute => _discordMuted,
         DiscordAction.ToggleDeafen => _discordDeafened,
+        DiscordAction.JoinChannel => _discordChannel is { } id && id == discord.Target,
         _ => false
     };
 
     private DeckButton? CreateDiscordButton(DiscordBinding? existing)
     {
-        var dialog = new DiscordWindow(existing) { Owner = this };
+        var dialog = new DiscordWindow(existing, _discord) { Owner = this };
         if (dialog.ShowDialog() != true || dialog.Result is null) return null;
 
         return BuildDiscordButton(dialog.Result);
@@ -2359,7 +2499,7 @@ public partial class MainWindow : Window, IDeckAgent
 
             if (key.Discord is { } dc && Enum.TryParse(dc.Action, ignoreCase: true, out DiscordAction discordAction))
             {
-                binding = new DiscordBinding(discordAction, key.Label, key.Icon);
+                binding = new DiscordBinding(discordAction, key.Label, key.Icon) { Target = dc.Target };
             }
             else if (key.Obs is { } obs && Enum.TryParse(obs.Action, ignoreCase: true, out ObsAction action))
             {

@@ -31,8 +31,11 @@ public sealed record ProposedKey(
 /// <summary>An OBS action on a proposed key. Target is the scene or audio source.</summary>
 public sealed record ProposedObs(string Action, string Target = "");
 
-/// <summary>A Discord action on a proposed key. None of them take a target.</summary>
-public sealed record ProposedDiscord(string Action);
+/// <summary>
+/// A Discord action on a proposed key. Target is the voice channel id for
+/// JoinChannel, and unused by the others.
+/// </summary>
+public sealed record ProposedDiscord(string Action, string Target = "");
 
 public sealed record DeckStatus(
     string Transport,
@@ -59,6 +62,16 @@ public interface IDeckAgent
     /// watching.
     /// </summary>
     Task<AskResult> AskAsync(string question, IReadOnlyList<string> options, TimeSpan timeout);
+
+    /// <summary>
+    /// What the connected applications currently offer: OBS scenes and audio sources,
+    /// Discord servers and voice channels.
+    ///
+    /// Without this an agent can propose a key that talks to OBS but cannot know what
+    /// any of the scenes are called, so it either asks the user to type them or
+    /// guesses. Both defeat the point of asking an assistant in the first place.
+    /// </summary>
+    Task<string> DescribeIntegrationsAsync();
 
     /// <summary>Shows a short message on an info cell for a few seconds.</summary>
     void Notify(string text, int? cell, Color? colour);

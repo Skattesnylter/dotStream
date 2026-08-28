@@ -203,6 +203,7 @@ public sealed class McpServer : IAsyncDisposable
                 "deck_set_key" => SetKey(arguments, id),
                 "deck_propose_page" => await ProposePageAsync(arguments, id),
                 "deck_status" => Status(id),
+                "deck_integrations" => ToolResult(id, await _agent.DescribeIntegrationsAsync()),
                 _ => Error(id, -32602, $"Unknown tool '{name}'")
             };
         }
@@ -262,7 +263,8 @@ public sealed class McpServer : IAsyncDisposable
                 if (entry?["discord"] is JsonObject d &&
                     d["action"]?.GetValue<string>() is { Length: > 0 } discordAction)
                 {
-                    discord = new ProposedDiscord(discordAction.Trim());
+                    discord = new ProposedDiscord(
+                        discordAction.Trim(), d["target"]?.GetValue<string>()?.Trim() ?? "");
                 }
 
                 ProposedObs? obs = null;
@@ -478,7 +480,10 @@ public sealed class McpServer : IAsyncDisposable
                                     ["properties"] = new JsonObject
                                     {
                                         ["action"] = Property("string",
-                                            "ToggleMute, ToggleDeafen or LeaveVoice.")
+                                            "ToggleMute, ToggleDeafen, LeaveVoice or JoinChannel."),
+                                        ["target"] = Property("string",
+                                            "Voice channel id for JoinChannel, from deck_integrations. "
+                                            + "Not used by the others.")
                                     },
                                     ["required"] = new JsonArray { "action" }
                                 }
@@ -499,6 +504,14 @@ public sealed class McpServer : IAsyncDisposable
         Tool("deck_status",
             "What the deck is showing right now: transport, current page, whether it is " +
             "following the focused app, and what is playing.",
+            new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() }),
+
+        Tool("deck_integrations",
+            "What the connected applications offer, by name: OBS scenes and audio "
+            + "sources, Discord servers and voice channels. Call this before proposing "
+            + "keys that drive them, because the names and channel ids come from here "
+            + "rather than from guesswork. Says so plainly when an application is not "
+            + "running, in which case do not propose keys for it.",
             new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() })
     ];
 

@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using DotStream.Rendering;
 
@@ -10,6 +10,7 @@ public enum DiscordAction
     ToggleMute,
     ToggleDeafen,
     LeaveVoice,
+    JoinChannel,
 }
 
 /// <summary>
@@ -26,6 +27,9 @@ public enum DiscordAction
 /// </summary>
 public sealed record DiscordBinding(DiscordAction Action, string Label = "", string Icon = "")
 {
+    /// <summary>Channel id for JoinChannel. Unused by the others.</summary>
+    public string Target { get; init; } = "";
+
     /// <summary>See <see cref="HotkeyBinding.IconFile"/>.</summary>
     public string IconFile { get; init; } = "";
 
@@ -39,6 +43,7 @@ public sealed record DiscordBinding(DiscordAction Action, string Label = "", str
             DiscordAction.ToggleMute => "Mute",
             DiscordAction.ToggleDeafen => "Deafen",
             DiscordAction.LeaveVoice => "Leave",
+            DiscordAction.JoinChannel => "Channel",
             _ => "Discord"
         };
 
@@ -50,6 +55,12 @@ public sealed record DiscordBinding(DiscordAction Action, string Label = "", str
             DiscordAction.ToggleMute => "microphone",
             DiscordAction.ToggleDeafen => "mute",
             DiscordAction.LeaveVoice => "cross",
+
+            // A speaker, because that is what Discord itself puts next to a voice
+            // channel. Text channels get a hash there; borrowing the convention means
+            // nobody has to learn ours.
+            DiscordAction.JoinChannel => "volume-up",
+
             _ => "person"
         });
 
@@ -75,6 +86,11 @@ public sealed record DiscordBinding(DiscordAction Action, string Label = "", str
         DiscordAction.LeaveVoice =>
             ("SELECT_VOICE_CHANNEL", new JsonObject { ["channel_id"] = null }),
 
+        // Force, because otherwise Discord refuses while you are already in a call
+        // rather than moving you, which is not what pressing a channel key means.
+        DiscordAction.JoinChannel =>
+            ("SELECT_VOICE_CHANNEL", new JsonObject { ["channel_id"] = Target, ["force"] = true }),
+
         _ => ("GET_VOICE_SETTINGS", null)
     };
 
@@ -83,6 +99,7 @@ public sealed record DiscordBinding(DiscordAction Action, string Label = "", str
         DiscordAction.ToggleMute => "Discord mute",
         DiscordAction.ToggleDeafen => "Discord deafen",
         DiscordAction.LeaveVoice => "left the voice channel",
+        DiscordAction.JoinChannel => $"joined {(Label.Length > 0 ? Label : "the channel")}",
         _ => "Discord"
     };
 }
